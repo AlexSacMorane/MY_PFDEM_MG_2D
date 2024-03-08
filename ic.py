@@ -12,7 +12,10 @@ def create_spheres(dict_user, dict_sample):
     Mesh and phase field maps are generated
     '''
     # Generate polyhedra particules
-    L_center, L_radius = generate_sphere_tempo(dict_user, dict_sample)
+    if dict_user['Shape'] == 'Sphere_no_overlap':
+        L_center, L_radius = generate_sphere_no_overlap_tempo(dict_user, dict_sample)
+    elif dict_user['Shape'] == 'Sphere_cfc':
+        L_center, L_radius = generate_sphere_cfc_tempo(dict_user, dict_sample)
     # save
     dict_sample['L_radius'] = L_radius
 
@@ -33,19 +36,23 @@ def create_spheres(dict_user, dict_sample):
     'n_ite_max': dict_user['n_ite_max'],
     'steady_state_detection': dict_user['steady_state_detection'],
     'n_steady_state_detection': dict_user['n_steady_state_detection'],
-    'print_dem_ic': 'dem_ic' in dict_user['L_figures']
+    'print_dem_ic': 'ic_dem' in dict_user['L_figures']
     }
     with open('data/main_to_dem_ic.data', 'wb') as handle:
         pickle.dump(dict_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
     # Compute ic configuration with yade
     os.system('yadedaily -j '+str(dict_user['n_proc'])+' -x -n dem_ic_base.py')
+    #os.system('yadedaily -j '+str(dict_user['n_proc'])+' dem_ic_base.py')
     # Load data
     with open('data/dem_ic_to_main.data', 'rb') as handle:
         dict_save = pickle.load(handle)
     # save
     dict_sample['L_center'] = dict_save['L_pos']
+    dict_sample['L_box'] = dict_save['L_box']
+    # tracker
+    dict_user['L_sample_height'].append(dict_save['y_max_wall']-dict_user['y_min_wall'])
 
-    # Plot ic configursation
+    # Plot ic configuration
     if 'ic_config' in dict_user['L_figures']:
         fig, ((ax1)) = plt.subplots(nrows=1,ncols=1,figsize=(16,9))
         for i_g in range(len(L_radius)):
@@ -111,7 +118,7 @@ def create_spheres(dict_user, dict_sample):
 
 # ------------------------------------------------------------------------------------------------------------------------------------------ #
 
-def generate_sphere_tempo(dict_user, dict_sample):
+def generate_sphere_no_overlap_tempo(dict_user, dict_sample):
     '''
     Generate spheres (polyhedra) in the box.
 
@@ -155,6 +162,44 @@ def generate_sphere_tempo(dict_user, dict_sample):
 
 # ------------------------------------------------------------------------------------------------------------------------------------------ #
 
+def generate_sphere_cfc_tempo(dict_user, dict_sample):
+    '''
+    Generate spheres (polyhedra) in the box.
+
+    A cfc mesh is assumed.
+    '''
+    # initialization
+    L_radius = []
+    L_center = []
+    # iteration on the line
+    for i_y in range(dict_user['n_lines']):
+        if i_y%2 == 0:
+            adaptation = 0 
+        else : 
+            adaptation = 1
+        # iteration on the grains of the line
+        for i_x in range(dict_user['n_grains_x']-adaptation):
+            # random generation of the grain radius
+            radius_tempo = dict_user['radius']*(1+dict_user['var_radius']*(random.random()-0.5)*2)
+            # random generation of the grain center (based on cfc mesh)
+            if i_y%2 == 0:
+                center_base_x = i_x*2*dict_user['radius'] + dict_user['radius'] 
+            else : 
+                center_base_x = i_x*2*dict_user['radius'] + 2*dict_user['radius']
+            center_base_y = i_y*2*dict_user['radius'] + dict_user['radius']
+            center_x = center_base_x + dict_user['radius']*dict_user['var_pos']*(random.random()-0.5)*2
+            center_y = center_base_y + dict_user['radius']*dict_user['var_pos']*(random.random()-0.5)*2
+            L_radius.append(radius_tempo) # add grain
+            L_center.append(np.array([center_x, center_y]))
+
+    # user GUI 
+    print('\nIC generation')
+    print(f"{len(L_radius)} grains generated\n")
+
+    return L_center, L_radius
+
+# ------------------------------------------------------------------------------------------------------------------------------------------ #
+
 def distribute_pf_variable(dict_user, dict_sample):
     '''
     Assign grains to etai (pf variables).
@@ -180,6 +225,7 @@ def distribute_pf_variable(dict_user, dict_sample):
     L_n_etai = [1]
     L_etai = [0]
     L_L_ig_etai = [[0]]
+    L_etai_ig = [0]
     for i_g in range(len(dict_sample['L_radius'])):
         if 0 in L_ig_near[i_g]:
             L_eta_near[i_g].append(0)
@@ -192,6 +238,7 @@ def distribute_pf_variable(dict_user, dict_sample):
             if etai not in L_eta_near[i_g]:
                 L_L_ig_etai[etai].append(i_g)
                 L_n_etai[etai] = L_n_etai[etai] + 1 
+                L_etai_ig.append(etai)
                 etai_defined = True
                 for j_g in range(len(dict_sample['L_radius'])):
                     if i_g in L_ig_near[j_g]:
@@ -200,8 +247,9 @@ def distribute_pf_variable(dict_user, dict_sample):
         # creation of a new pf variable
         if etai == len(L_etai) and not etai_defined:
             L_etai.append(etai)
-            L_n_etai.append(1)
             L_L_ig_etai.append([i_g])
+            L_n_etai.append(1)
+            L_etai_ig.append(etai)
             for j_g in range(len(dict_sample['L_radius'])):
                 if i_g in L_ig_near[j_g]:
                     L_eta_near[j_g].append(etai)
@@ -222,6 +270,7 @@ def distribute_pf_variable(dict_user, dict_sample):
             L_n_etai[etai_under] = L_n_etai[etai_under] + 1
             L_L_ig_etai[etai_over].remove(ig_to_work)
             L_L_ig_etai[etai_under].append(ig_to_work)
+            L_etai_ig[ig_to_work] = etai_under
             for j_g in range(len(dict_sample['L_radius'])):
                 if ig_to_work in L_ig_near[j_g]:
                     L_eta_near[j_g].remove(etai_over)
@@ -237,6 +286,7 @@ def distribute_pf_variable(dict_user, dict_sample):
             adaptation_done = True
     # save
     dict_sample['L_L_ig_etai'] = L_L_ig_etai
+    dict_sample['L_etai_ig'] = L_etai_ig
     # user GUI 
     print(f"{len(L_etai)} phase variables used.")
     print(f"{round(len(dict_sample['L_radius'])/len(L_etai),1)} grains described for one phase variable.\n")

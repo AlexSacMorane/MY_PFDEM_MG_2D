@@ -9,7 +9,6 @@ from pathlib import Path
 from dem_to_pf import *
 from pf_to_dem import *
 from ic import *
-from dem import *
 from tools import *
 from Parameters import *
 
@@ -20,49 +19,37 @@ def run_moose(dict_user, dict_sample):
     '''
     Prepare and run moose simulation.
     '''
+
+    raise ValueError('Stop')
+
     # from dem to pf
+    # rbm to pf variables
     tic_dem_to_pf = time.perf_counter() # compute dem_to_pf performances
     tic_tempo = time.perf_counter() # compute performances
     move_phasefield(dict_user, dict_sample) # in dem_to_pf.py
     tac_tempo = time.perf_counter() # compute performances
     dict_user['move_pf'] = dict_user['move_pf'] + tac_tempo-tic_tempo 
+    # compute contact characterization
     tic_tempo = time.perf_counter() # compute performances
     compute_contact_volume(dict_user, dict_sample) # in dem_to_pf.py
     tac_tempo = time.perf_counter() # compute performances
     dict_user['comp_con_vol'] = dict_user['comp_con_vol'] + tac_tempo-tic_tempo 
-    
-    # Control and adapt the force applied in DEM
-    # YADE assumes only convex shapes. If particle is concave, it creates false volume
-    # the control of the force is here to compensate this phenomena 
-    if dict_user['control_force']:
-        tic_tempo = time.perf_counter() # compute performances
-        control_force(dict_user, dict_sample) # in pf_to_dem.py
-        tac_tempo = time.perf_counter() # compute performances
-        dict_user['control_f'] = dict_user['control_f'] + tac_tempo-tic_tempo 
-        # here it is done only one times
-        # can be done several times per PFDEM iteration to be sure the contact is well applied
-
-    # plot contact characterization
-    tic_tempo = time.perf_counter() # compute performances
-    plot_contact_v_s_d(dict_user, dict_sample) # in tools.py
-    tac_tempo = time.perf_counter() # compute performances
-    dict_user['plot_con_v_s_d'] = dict_user['plot_con_v_s_d'] + tac_tempo-tic_tempo 
-
-    # from dem to pf
+    # compute diffusivity map
     tic_tempo = time.perf_counter() # compute performances
     compute_kc(dict_user, dict_sample) # in dem_to_pf.py
     tac_tempo = time.perf_counter() # compute performances
     dict_user['comp_kc'] = dict_user['comp_kc'] + tac_tempo-tic_tempo 
+    # compute solid activity map
     tic_tempo = time.perf_counter() # compute performances
     compute_as(dict_user, dict_sample) # in dem_to_pf.py
     tac_tempo = time.perf_counter() # compute performances
     dict_user['comp_as'] = dict_user['comp_as'] + tac_tempo-tic_tempo 
-    
     # compute ed (for trackers and Aitken method)
     tic_tempo = time.perf_counter() # compute performances
     compute_ed(dict_user, dict_sample) # in dem_to_pf.py
     tac_tempo = time.perf_counter() # compute performances
     dict_user['comp_ed'] = dict_user['comp_ed'] + tac_tempo-tic_tempo 
+    # Aitken method
     tic_tempo = time.perf_counter() # compute performances
     compute_dt_PF_Aitken(dict_user, dict_sample) # in dem_to_pf.py
     tac_tempo = time.perf_counter() # compute performances
@@ -116,27 +103,31 @@ def run_yade(dict_user, dict_sample):
     plot_shape_evolution(dict_user, dict_sample) # from tools.py
     tac_tempo = time.perf_counter() # compute performances
     dict_user['plot_shape'] = dict_user['plot_shape'] + tac_tempo-tic_tempo 
-    
+
     # transmit data
     tic_tempo = time.perf_counter() # compute performances
     dict_save = {
     'E': dict_user['E'],
     'Poisson': dict_user['Poisson'],
     'force_applied': dict_user['force_applied'],
-    'pos_1': dict_sample['pos_1'],
-    'pos_2': dict_sample['pos_2'],
+    'k_control_force': dict_user['k_control_force'],
+    'd_y_limit': dict_user['d_y_limit'],
+    'x_min_wall': dict_user['x_min_wall'],
+    'x_max_wall': dict_user['x_max_wall'],
+    'y_min_wall': dict_user['y_min_wall'],
+    'y_max_wall': dict_user['y_max_wall'],
     'n_ite_max': dict_user['n_ite_max'],
     'steady_state_detection': dict_user['steady_state_detection'],
     'n_steady_state_detection': dict_user['n_steady_state_detection'],
-    'print_all_contact_dem': dict_user['print_all_contact_dem'],
-    'print_contact_dem': 'contact_dem' in dict_user['L_figures'],
+    'print_all_dem': dict_user['print_all_dem'],
+    'print_dem': 'dem' in dict_user['L_figures'],
     'i_DEMPF_ite': dict_sample['i_DEMPF_ite']
     }
     with open('data/main_to_dem.data', 'wb') as handle:
         pickle.dump(dict_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
     tac_tempo = time.perf_counter() # compute performances
     dict_user['save_dem'] = dict_user['save_dem'] + tac_tempo-tic_tempo 
-    
+
     # dem
     print('Running DEM')
     tic_dem = time.perf_counter() # compute dem performances
@@ -155,11 +146,11 @@ def run_yade(dict_user, dict_sample):
     tic_tempo = time.perf_counter() # compute performances
     with open('data/dem_to_main.data', 'rb') as handle:
         dict_save = pickle.load(handle)
-    dict_sample['pos_1'] = dict_save['pos_1']
-    dict_sample['pos_2'] = dict_save['pos_2']
+    dict_sample['L_center'] = dict_save['L_pos']
+    dict_sample['L_box'] = dict_save['L_box']
     tac_tempo = time.perf_counter() # compute performances
     dict_user['read_dem'] = dict_user['read_dem'] + tac_tempo-tic_tempo 
-    
+
     # plot evolution of the number of vertices used in Yade
     tic_tempo = time.perf_counter() # compute performances
     plot_n_vertices(dict_user, dict_sample) # from tools.py
@@ -180,6 +171,10 @@ if dict_user['print_all_contact_detection'] and 'contact_detection' in dict_user
     create_folder('plot/contact_detection') # from tools.py
 if dict_user['print_all_map_config'] and 'maps' in dict_user['L_figures']:
     create_folder('plot/map_etas_solute') # from tools.py
+if 'shape_evolution' in dict_user['L_figures']:
+    create_folder('plot/shape_evolution') # fom tools.py
+if 'dem' in dict_user['L_figures'] and dict_user['print_all_dem']:
+    create_folder('plot/dem') # fom tools.py
 create_folder('data') # from tools.py
 create_folder('input') # from tools.py
 create_folder('dict') # from tools.py
@@ -198,7 +193,7 @@ tic = time.perf_counter()
 # ------------------------------------------------------------------------------------------------------------------------------------------ #
 # Create initial condition
 
-if dict_user['Shape'] == 'Sphere':
+if dict_user['Shape'] == 'Sphere_no_overlap' or dict_user['Shape'] == 'Sphere_cfc':
     create_spheres(dict_user, dict_sample) # from ic.py
 create_solute(dict_user, dict_sample) # from ic.py
 
@@ -222,8 +217,6 @@ dict_user['L_m_mass'].append(m_eta+np.mean(dict_sample['c_map']))
 
 dict_user['move_pf'] = 0
 dict_user['comp_con_vol'] = 0
-dict_user['control_f'] = 0
-dict_user['plot_con_v_s_d'] = 0
 dict_user['comp_kc'] = 0
 dict_user['comp_as'] = 0
 dict_user['comp_ed'] = 0
@@ -252,13 +245,13 @@ while dict_sample['i_DEMPF_ite'] < dict_user['n_DEMPF_ite']:
     dict_sample['i_DEMPF_ite'] = dict_sample['i_DEMPF_ite'] + 1
     print('\nStep',dict_sample['i_DEMPF_ite'],'/',dict_user['n_DEMPF_ite'],'\n')
 
-    raise ValueError('Stop')
-
     # DEM
     run_yade(dict_user, dict_sample)
 
     # DEM->PF, PF, PF->DEM
     run_moose(dict_user, dict_sample)
+
+    raise ValueError('Stop')
 
     # Evolution of sum and mean of etai + c
     tic_tempo = time.perf_counter() # compute performances
@@ -309,9 +302,9 @@ if dict_user['save_simulation']:
     os.mkdir('../Data_PressureSolution_2G_2D/'+name)
     shutil.copytree('dict', '../Data_PressureSolution_2G_2D/'+name+'/dict')
     shutil.copytree('plot', '../Data_PressureSolution_2G_2D/'+name+'/plot')
-    shutil.copy('dem.py', '../Data_PressureSolution_2G_2D/'+name+'/dem.py')
     shutil.copy('dem_base.py', '../Data_PressureSolution_2G_2D/'+name+'/dem_base.py')
     shutil.copy('dem_to_pf.py', '../Data_PressureSolution_2G_2D/'+name+'/dem_to_pf.py')
+    shutil.copy('dem_ic_base.py', '../Data_PressureSolution_2G_2D/'+name+'/dem_ic_base.py')
     shutil.copy('ic.py', '../Data_PressureSolution_2G_2D/'+name+'/ic.py')
     shutil.copy('main.py', '../Data_PressureSolution_2G_2D/'+name+'/main.py')
     shutil.copy('Parameters.py', '../Data_PressureSolution_2G_2D/'+name+'/Parameters.py')

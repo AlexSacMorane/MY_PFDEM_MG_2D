@@ -24,31 +24,68 @@ def get_parameters():
 
     # Select Figures to plot
     # Available:
-    # dem_ic, ic_config, ic_pf_dist, ic_pf_map, ic_c_map
-    # maps, contact_detection, dem_ic
-    L_figures = ['dem_ic', 'ic_config', 'ic_pf_dist', 'ic_pf_map', 'ic_c_map']
+    # ic_dem, ic_config, ic_pf_dist, ic_pf_map, ic_c_map
+    # maps, contact_detection, sphericities, shape_evolution, dem, n_vertices
+    L_figures = ['ic_dem', 'ic_pf_dist', 'ic_pf_map',\
+                 'shape_evolution', 'dem', 'n_vertices']
 
     # Figure (plot all or current)
     # The maps configuration
     print_all_map_config = False # else only the current one is printed 
     # The detection of the contact by a box
     print_all_contact_detection = False # else only the current one is printed
+    # Compare the shape of the grains with the initial one
+    print_all_shape_evolution = False # else only the current one is printed
+    # The dem plot
+    print_all_dem = False # else only the current one is printed
 
     #---------------------------------------------------------------------#
     # Grain description
 
     # shape of the grain
-    # Sphere, 
-    Shape = 'Sphere'
-    # Number of grains
-    n_grain = 10
-    # the radius of grains and its variance
-    radius = 1 # m
+    # Sphere_no_overlap, Sphere_cfc 
+    Shape = 'Sphere_no_overlap'
+    # the variance of the radius
     var_radius = 0.2
     # discretization of the grain
     n_phi = 80
-    # maximum number of iteration for ic generation
-    n_max_gen_ic = 100
+
+    # Details (parameters used in specific condition)
+    # Sphere_no_overlap
+    if Shape == 'Sphere_no_overlap':
+        # maximum number of iteration for ic generation
+        n_max_gen_ic = 100
+        # the radius o
+        radius = 1 # m
+        # Number of grains
+        n_grain = 10
+    # Sphere_cfc
+    elif Shape == 'Sphere_cfc':
+        # the variance of the position in the cfc
+        var_pos = 0.05
+        # the number of grains in the line
+        n_grains_x = 4
+        # the number of lines
+        n_lines = 7
+
+    #---------------------------------------------------------------------#
+    # Wall description 
+    # Wall but what about periodic bc ?  
+    
+    # coordinates
+    x_min_wall = 0
+    if Shape == 'Sphere_no_overlap':
+        x_max_wall = 10*radius + x_min_wall
+    elif Shape == 'Sphere_cfc':
+        x_max_wall = 2*1*n_grains_x + x_min_wall
+    y_min_wall = 0
+    # y_max_wall depends in the case
+    if Shape == 'Sphere_no_overlap':
+        # User can give value
+        y_max_wall = (x_max_wall-x_min_wall)/2 + y_min_wall
+    elif Shape == 'Sphere_cfc':
+        # Value computed
+        y_max_wall = n_lines/n_grains_x*(x_max_wall-x_min_wall) + y_min_wall
 
     #---------------------------------------------------------------------#
     # DEM (Yade)
@@ -60,7 +97,7 @@ def get_parameters():
     Poisson = 0.3
     
     # steady state detection
-    n_ite_max = 5000 # maximum number of iteration during a DEM step
+    n_ite_max = 1000 # maximum number of iteration during a DEM step
     n_steady_state_detection = 100 # number of iterations considered in the window
     # the difference between max and min < tolerance * force_applied
     # + the force applied must be contained in this window
@@ -71,20 +108,14 @@ def get_parameters():
     # controler coefficient
     k_control_force = E # m/N
     # limiting d_y_max
-    d_y_limit = 0.005*radius
+    if Shape == 'Sphere_no_overlap':
+        d_y_limit = 0.005*radius
+    elif Shape == 'Sphere_cfc':
+        radius = (x_max_wall-x_min_wall)/(2*n_grains_x)
+        d_y_limit = 0.005*radius
 
     # Contact box detection
     eta_contact_box_detection = 0.25 # value of the phase field searched to determine the contact box
-
-    #---------------------------------------------------------------------#
-    # Wall description 
-    # Wall but what about periodic bc ?  
-    
-    # coordinates
-    x_min_wall = 0
-    x_max_wall = radius*10
-    y_min_wall = 0
-    y_max_wall = (x_max_wall-x_min_wall)/2 + y_min_wall
 
     #---------------------------------------------------------------------#
     # Phase-Field (Moose)
@@ -164,6 +195,7 @@ def get_parameters():
     L_m_PerimeterSphericity = []
     L_m_WidthToLengthRatioSpericity = []
     L_grain_kc_map = []
+    L_L_vertices_init = None
 
     #---------------------------------------------------------------------#
     # dictionnary
@@ -177,6 +209,8 @@ def get_parameters():
     'L_figures': L_figures,
     'print_all_map_config': print_all_map_config,
     'print_all_contact_detection': print_all_contact_detection,
+    'print_all_shape_evolution': print_all_shape_evolution,
+    'print_all_dem': print_all_dem,
     'n_ite_max': n_ite_max,
     'n_steady_state_detection': n_steady_state_detection,
     'steady_state_detection': steady_state_detection,
@@ -187,11 +221,9 @@ def get_parameters():
     'Poisson': Poisson,
     'eta_contact_box_detection': eta_contact_box_detection,
     'Shape': Shape,
-    'n_grain': n_grain,
-    'radius': radius,
     'var_radius': var_radius,
     'n_phi': n_phi,
-    'n_max_gen_ic': n_max_gen_ic,
+    'radius': radius,
     'x_min_wall': x_min_wall,
     'x_max_wall': x_max_wall,
     'y_min_wall': y_min_wall,
@@ -241,7 +273,17 @@ def get_parameters():
     'L_m_CircleRatioSphericity': L_m_CircleRatioSphericity,
     'L_m_PerimeterSphericity': L_m_PerimeterSphericity,
     'L_m_WidthToLengthRatioSpericity': L_m_WidthToLengthRatioSpericity,
-    'L_grain_kc_map': L_grain_kc_map
+    'L_grain_kc_map': L_grain_kc_map,
+    'L_L_vertices_init': L_L_vertices_init
     }
+
+    # add specificities
+    if Shape == 'Sphere_no_overlap':
+        dict_user['n_grain'] = n_grain
+        dict_user['n_max_gen_ic'] = n_max_gen_ic
+    elif Shape == 'Sphere_cfc':
+        dict_user['var_pos'] = var_pos
+        dict_user['n_grains_x'] = n_grains_x
+        dict_user['n_lines'] = n_lines
 
     return dict_user
