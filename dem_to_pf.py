@@ -1,6 +1,6 @@
 # -*- encoding=utf-8 -*-
 
-import pickle, math, os, shutil
+import pickle, math, os, shutil, random
 from pathlib import Path
 from scipy.ndimage import binary_dilation, label
 import numpy as np
@@ -16,63 +16,259 @@ def move_phasefield(dict_user, dict_sample):
     '''
     Move phase field maps by interpolation.
     '''
-    # g2 (as g1 is fixed)
+    print('Updating phase field maps')
 
     # load data
     with open('data/dem_to_main.data', 'rb') as handle:
         dict_save = pickle.load(handle)
-    displacement_g2 = dict_save['displacement_g2']
+    L_displacement = dict_save['L_displacement']
 
     # tracker
-    dict_user['L_displacement'].append(displacement_g2[1])
+    dict_user['L_L_displacement'].append(dict_save['L_displacement'])
+    if 'displacement' in dict_user['L_figures']:
+        plot_displacement(dict_user, dict_sample) # from tools.py
 
-    # loading old variables
-    eta_1_map = dict_sample['eta_1_map']
-    eta_2_map = dict_sample['eta_2_map']
+    # iterate on grains
+    for i_grain in range(0, len(dict_sample['L_etai_map'])):
+        # read displacement
+        displacement = L_displacement[i_grain] 
+        # print
+        #print('grain', i_grain, ':', displacement)
 
-    # updating phase map
-    print('Updating phase field maps')
-    eta_1_map_new = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
-    eta_2_map_new = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
-    
-    # iteration on y
-    i_y_old = 0
-    for i_y in range(len(dict_sample['y_L'])):
-        y = dict_sample['y_L'][i_y]
+        # TRANSLATION on x
+        # loading old variables
+        eta_i_map = dict_sample['L_etai_map'][i_grain]
+        # updating phase map
+        eta_i_map_new = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
+        # iteration on x
+        for i_x in range(len(dict_sample['x_L'])):
+            x = dict_sample['x_L'][i_x]
+            i_x_old = 0
+            # eta 1 
+            if displacement[0] < 0:
+                if x-displacement[0] <= dict_sample['x_L'][-1]:
+                    # look for window
+                    while not (dict_sample['x_L'][i_x_old] <= x-displacement[0] and x-displacement[0] <= dict_sample['x_L'][i_x_old+1]):
+                        i_x_old = i_x_old + 1
+                    # interpolate
+                    eta_i_map_new[:, i_x] = (eta_i_map[:, (i_x_old+1)] - eta_i_map[:, i_x_old])/(dict_sample['x_L'][i_x_old+1] - dict_sample['x_L'][i_x_old])*\
+                                                (x-displacement[0] - dict_sample['x_L'][i_x_old]) + eta_i_map[:, i_x_old]
+            elif displacement[0] > 0:
+                if dict_sample['x_L'][0] <= x-displacement[0]:
+                    # look for window
+                    while not (dict_sample['x_L'][i_x_old] <= x-displacement[0] and x-displacement[0] <= dict_sample['x_L'][i_x_old+1]):
+                        i_x_old = i_x_old + 1
+                    # interpolate
+                    eta_i_map_new[:, i_x] = (eta_i_map[:, (i_x_old+1)] - eta_i_map[:, i_x_old])/(dict_sample['x_L'][i_x_old+1] - dict_sample['x_L'][i_x_old])*\
+                                                (x-displacement[0] - dict_sample['x_L'][i_x_old]) + eta_i_map[:, i_x_old]
+            else :
+                eta_i_map_new = eta_i_map
+        
+        # TRANSLATION on y
+        # loading old variables
+        eta_i_map = eta_i_map_new.copy()
+        # updating phase map
+        eta_i_map_new = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
+        # iteration on y
+        for i_y in range(len(dict_sample['y_L'])):
+            y = dict_sample['y_L'][i_y]
+            i_y_old = 0
+            # eta 1 
+            if displacement[1] < 0:
+                if y-displacement[1] <= dict_sample['y_L'][-1]:
+                    # look for window
+                    while not (dict_sample['y_L'][i_y_old] <= y-displacement[1] and y-displacement[1] <= dict_sample['y_L'][i_y_old+1]):
+                        i_y_old = i_y_old + 1
+                    # interpolate
+                    eta_i_map_new[-1-i_y, :] = (eta_i_map[-1-(i_y_old+1), :] - eta_i_map[-1-i_y_old, :])/(dict_sample['y_L'][i_y_old+1] - dict_sample['y_L'][i_y_old])*\
+                                                (y-displacement[1] - dict_sample['y_L'][i_y_old]) + eta_i_map[-1-i_y_old, :]
+            elif displacement[1] > 0:
+                if dict_sample['y_L'][0] <= y-displacement[1]:
+                    # look for window
+                    while not (dict_sample['y_L'][i_y_old] <= y-displacement[1] and y-displacement[1] <= dict_sample['y_L'][i_y_old+1]):
+                        i_y_old = i_y_old + 1
+                    # interpolate
+                    eta_i_map_new[-1-i_y, :] = (eta_i_map[-1-(i_y_old+1), :] - eta_i_map[-1-i_y_old, :])/(dict_sample['y_L'][i_y_old+1] - dict_sample['y_L'][i_y_old])*\
+                                                (y-displacement[1] - dict_sample['y_L'][i_y_old]) + eta_i_map[-1-i_y_old, :]
+            else :
+                eta_i_map_new = eta_i_map
 
-        # eta 1, fixed
-        eta_1_map_new = eta_1_map
+        # ROTATION
+        if displacement[2] != 0:
+            # compute center of mass
+            center_x = 0
+            center_y = 0
+            center_z = 0
+            counter = 0
+            # iterate on x
+            for i_x in range(len(dict_sample['x_L'])):
+                # iterate on y
+                for i_y in range(len(dict_sample['y_L'])):
+                    # criterion to verify the point is inside the grain
+                    if dict_user['eta_contact_box_detection'] < eta_i_map_new[-1-i_y, i_x]:
+                        center_x = center_x + dict_sample['x_L'][i_x]
+                        center_y = center_y + dict_sample['y_L'][i_y]
+                        counter = counter + 1
+            # compute the center of mass
+            center_x = center_x/counter
+            center_y = center_y/counter
+            center = np.array([center_x, center_y, 0])
+                        
+            # compute matrice of rotation
+            # cf french wikipedia "quaternions et rotation dans l'espace"
+            a = displacement[2]
+            b = displacement[3]
+            c = displacement[4]
+            d = displacement[5]
+            M_rot = np.array([[a*a+b*b-c*c-d*d,     2*b*c-2*a*d,     2*a*c+2*b*d],
+                                [    2*a*d+2*b*c, a*a-b*b+c*c-d*d,     2*c*d-2*a*b],
+                                [    2*b*d-2*a*c,     2*a*b+2*c*d, a*a-b*b-c*c+d*d]])
+            M_rot_inv = np.linalg.inv(M_rot)
+            
+            # loading old variables
+            eta_i_map = eta_i_map_new.copy()
+            # updating phase map
+            eta_i_map_new = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
+            # iteration on x
+            for i_x in range(len(dict_sample['x_L'])):
+                # iteration on y
+                for i_y in range(len(dict_sample['y_L'])):
+                    # create vector of the node
+                    p = np.array([dict_sample['x_L'][i_x], dict_sample['y_L'][i_y], 0])
+                    # remove the center of the grain
+                    pp = p - center
+                    # applied the invert rotation
+                    pp = np.dot(M_rot_inv, pp)
+                    # applied center
+                    pp = pp + center
+                    # initialization 
+                    found = True
+                    # look for the vector in the x-axis                    
+                    if dict_sample['x_L'][0] <= pp[0] and pp[0] <= dict_sample['x_L'][-1]:
+                        i_x_old = 0
+                        while not (dict_sample['x_L'][i_x_old] <= pp[0] and pp[0] <= dict_sample['x_L'][i_x_old+1]):
+                            i_x_old = i_x_old + 1
+                    else :
+                        found = False
+                    # look for the vector in the y-axis                    
+                    if dict_sample['y_L'][0] <= pp[1] and pp[1] <= dict_sample['y_L'][-1]:
+                        i_y_old = 0
+                        while not (dict_sample['y_L'][i_y_old] <= pp[1] and pp[1] <= dict_sample['y_L'][i_y_old+1]):
+                            i_y_old = i_y_old + 1
+                    else :
+                        found = False
+                    # double interpolation if point found
+                    if found :
+                        # interpolation following the z-axis
+                        # points
+                        p00 = np.array([  dict_sample['x_L'][i_x_old],   dict_sample['y_L'][i_y_old]])
+                        p10 = np.array([dict_sample['x_L'][i_x_old+1],   dict_sample['y_L'][i_y_old]])
+                        p01 = np.array([  dict_sample['x_L'][i_x_old], dict_sample['y_L'][i_y_old+1]])
+                        p11 = np.array([dict_sample['x_L'][i_x_old+1], dict_sample['y_L'][i_y_old+1]])
+                        # values
+                        q00 = eta_i_map[-1-i_y_old    ,   i_x_old]
+                        q10 = eta_i_map[-1-i_y_old    , i_x_old+1]
+                        q01 = eta_i_map[-1-(i_y_old+1),   i_x_old]
+                        q11 = eta_i_map[-1-(i_y_old+1), i_x_old+1]
+                        
+                        # interpolation following the y-axis
+                        # points
+                        p0 = np.array([  dict_sample['x_L'][i_x_old]])
+                        p1 = np.array([dict_sample['x_L'][i_x_old+1]])
+                        # values
+                        q0 = (q00*(p01[1]-pp[1]) + q01*(pp[1]-p00[1]))/(p01[1]-p00[1])
+                        q1 = (q10*(p11[1]-pp[1]) + q11*(pp[1]-p10[1]))/(p11[1]-p10[1])
 
-        # eta 2
-        if displacement_g2[1] < 0:
-            if y-displacement_g2[1] <= dict_sample['y_L'][-1]:
-                # look for window
-                while not (dict_sample['y_L'][i_y_old] <= y-displacement_g2[1] and y-displacement_g2[1] < dict_sample['y_L'][i_y_old+1]):
-                    i_y_old = i_y_old + 1
-                # interpolate
-                eta_2_map_new[-1-i_y, :] = (eta_2_map[-1-(i_y_old+1), :] - eta_2_map[-1-i_y_old, :])/(dict_sample['y_L'][i_y_old+1] - dict_sample['y_L'][i_y_old])*\
-                                           (y-displacement_g2[1] - dict_sample['y_L'][i_y_old]) + eta_2_map[-1-i_y_old, :]
-        elif displacement_g2[1] > 0:
-            if dict_sample['y_L'][0] <= y-displacement_g2[1]:
-                # look for window
-                while not (dict_sample['y_L'][i_y_old] <= y-displacement_g2[1] and y-displacement_g2[1] < dict_sample['y_L'][i_y_old+1]):
-                    i_y_old = i_y_old + 1
-                # interpolate
-                eta_2_map_new[-1-i_y, :] = (eta_2_map[-1-(i_y_old+1), :] - eta_2_map[-1-i_y_old, :])/(dict_sample['y_L'][i_y_old+1] - dict_sample['y_L'][i_y_old])*\
-                                           (y-displacement_g2[1] - dict_sample['y_L'][i_y_old]) + eta_2_map[-1-i_y_old, :]
-        else :
-            eta_2_map_new = eta_2_map
+                        # interpolation following the x-axis
+                        eta_i_map_new[-1-i_y, i_x] = (q0*(p1[0]-pp[0]) + q1*(pp[0]-p0[0]))/(p1[0]-p0[0])
+                        
+                    else :
+                        eta_i_map_new[-1-i_y, i_x] = 0
+                              
+        # update variables
+        dict_sample['L_etai_map'][i_grain] = eta_i_map_new
 
-    # The solute map is updated
-    # the solute is push out/in of the grain
-    # this is done in compute_kc() from dem_to_pf.py called later
+# -----------------------------------------------------------------------------#
 
-    # update variables
-    dict_sample['eta_1_map'] = eta_1_map_new
-    dict_sample['eta_2_map'] = eta_2_map_new
+def compute_contact(dict_user, dict_sample):
+    '''
+    Compute the contact characteristics:
+        - box
+        - maximum surface
+        - volume
+    '''
+    # load data
+    with open('data/dem_to_main.data', 'rb') as handle:
+        dict_save = pickle.load(handle)
+    L_contact = dict_save['L_contact']
+    # initialization
+    dict_sample['L_vol_contact'] = []
+    dict_sample['L_surf_contact'] = []
 
-    # write txts for phase field
-    write_eta_txt(dict_user, dict_sample) # phase field
+    # iterate on contacts
+    for contact in L_contact:   
+        # volume
+        vol_contact = 0
+        # points in contact
+        L_points_contact = []
+        # iterate on mesh
+        for i_x in range(len(dict_sample['x_L'])):
+            for i_y in range(len(dict_sample['y_L'])):
+                # contact detection
+                if dict_sample['L_etai_map'][contact[0]][-1-i_y, i_x] > dict_user['eta_contact_box_detection'] and\
+                    dict_sample['L_etai_map'][contact[1]][-1-i_y, i_x] > dict_user['eta_contact_box_detection']:
+        
+                    # points in contact
+                    L_points_contact.append(np.array([dict_sample['x_L'][i_x], dict_sample['y_L'][i_y]]))
+            
+                    # compute volume contact
+                    vol_contact = vol_contact + (dict_sample['x_L'][1]-dict_sample['x_L'][0])*\
+                                                (dict_sample['y_L'][1]-dict_sample['y_L'][0])
+             
+        # compute surface
+        surf_contact = 0
+        for i in range(len(L_points_contact)-1):
+           for j in range(i+1, len(L_points_contact)):
+                # compute vector
+                u = L_points_contact[i]-L_points_contact[j]
+                v = contact[3]/np.linalg.norm(contact[3])
+                v = np.array([-v[1], v[0]])
+                # look for larger surface
+                if abs(np.dot(u,v))> surf_contact:
+                   surf_contact = abs(np.dot(u,v))
+
+        # save
+        dict_sample['L_vol_contact'].append(vol_contact)
+        dict_sample['L_surf_contact'].append(surf_contact)
+
+    # save
+    # iterate on potential contact
+    ij = 0
+    for i_grain in range(len(dict_sample['L_etai_map'])-1):
+        for j_grain in range(i_grain+1, len(dict_sample['L_etai_map'])):
+            if len(L_contact)>0:
+                i_contact = 0
+                contact_found = L_contact[i_contact][0:2] == [i_grain, j_grain]
+                while not contact_found and i_contact < len(L_contact)-1:
+                        i_contact = i_contact + 1
+                        contact_found = L_contact[i_contact][0:2] == [i_grain, j_grain]
+            else :
+                contact_found = False
+            if dict_sample['i_DEMPF_ite'] == 1:
+                if contact_found:
+                    dict_user['L_L_contact_volume'].append([dict_sample['L_vol_contact'][i_contact]])
+                    dict_user['L_L_contact_surface'].append([dict_sample['L_surf_contact'][i_contact]])
+                else:
+                    dict_user['L_L_contact_volume'].append([0])
+                    dict_user['L_L_contact_surface'].append([0])
+            else :
+                if contact_found:
+                    dict_user['L_L_contact_volume'][ij].append(dict_sample['L_vol_contact'][i_contact])
+                    dict_user['L_L_contact_surface'][ij].append(dict_sample['L_surf_contact'][i_contact])
+                else:
+                    dict_user['L_L_contact_volume'][ij].append(0)
+                    dict_user['L_L_contact_surface'][ij].append(0)
+            ij = ij + 1
 
 # -----------------------------------------------------------------------------#
 
@@ -80,376 +276,113 @@ def compute_as(dict_user, dict_sample):
     '''
     Compute activity of solid.
     '''
-    # load data from dem
+    # load data
     with open('data/dem_to_main.data', 'rb') as handle:
         dict_save = pickle.load(handle)
-    contactPoint = dict_save['contact_point']
-    normalForce = dict_user['force_applied_target']
-    contact_area = 1*(dict_sample['box_contact_x_max'] - dict_sample['box_contact_x_min'])
-
-    # tracker
-    dict_user['L_P_applied'].append(np.linalg.norm(normalForce)/contact_area)
-
-    # plot
-    if 'contact_pressure' in dict_user['L_figures'] :
-        fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        # overlap
-        ax1.plot(dict_user['L_P_applied'])
-        ax1.set_title('Pressure at the contact (Pa)',fontsize=20)
-        fig.tight_layout()
-        fig.savefig('plot/contact_pressure.png')
-        plt.close(fig)
+    L_contact = dict_save['L_contact']
 
     # init
-    dict_sample['as_map'] = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
-    # cst
-    R_gas = 82.06e5 # cm3 Pa K-1 mol-1
-    Temp = 25+278   # K
-    V_m = 27.1      # cm3 mol-1
-    conv = 1        # = 1/C_ref, normalize the sink/source
-    s_mesh = 1*(dict_sample['x_L'][1]-dict_sample['x_L'][0]) # surface of a mesh, m2
-    v_mesh = 1*(dict_sample['x_L'][1]-dict_sample['x_L'][0])*(dict_sample['y_L'][1]-dict_sample['y_L'][0]) # volume of a mesh, m3
+    dict_sample['as_map'] = np.ones((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
+    L_pressure_tempo = []
+    L_as_tempo = []
 
-    # iterate on mesh
-    for i_x in range(len(dict_sample['x_L'])):
-        for i_y in range(len(dict_sample['y_L'])):
-            # determine pressure
-            if dict_sample['eta_1_map'][i_y, i_x] > dict_user['eta_contact_box_detection'] and dict_sample['eta_2_map'][i_y, i_x] > dict_user['eta_contact_box_detection']: # in the contact
-                P =  np.linalg.norm(normalForce)/contact_area # Pa
-            else : # not in the contact
-                P = 0 # Pa
-            # save in the map
-            dict_sample['as_map'][i_y, i_x] = math.exp(P*V_m/(R_gas*Temp))
+    # iterate on contacts
+    for i_contact in range(len(L_contact)):
+        p_saved = False
+        contact = L_contact[i_contact]
+        # iterate on mesh
+        for i_x in range(len(dict_sample['x_L'])):
+            for i_y in range(len(dict_sample['y_L'])):
+                # contact detection
+                if dict_sample['L_etai_map'][contact[0]][-1-i_y, i_x] > dict_user['eta_contact_box_detection'] and\
+                    dict_sample['L_etai_map'][contact[1]][-1-i_y, i_x] > dict_user['eta_contact_box_detection']:
+                    # determine pressure
+                    P = np.linalg.norm(contact[3])/dict_sample['L_surf_contact'][i_contact] # Pa
+                    # tempo save
+                    if not p_saved :
+                        L_pressure_tempo.append(P)
+                        L_as_tempo.append(math.exp(P*dict_user['V_m']/(dict_user['R_cst']*dict_user['temperature'])))
+                        p_saved = True
+                    # save in the map
+                    # do not erase data
+                    if dict_sample['as_map'][-1-i_y, i_x] == 1:
+                        dict_sample['as_map'][-1-i_y, i_x] = math.exp(P*dict_user['V_m']/(dict_user['R_cst']*dict_user['temperature']))
+
+    # save
+    # iterate on potential contact
+    ij = 0
+    for i_grain in range(len(dict_sample['L_etai_map'])-1):
+        for j_grain in range(i_grain+1, len(dict_sample['L_etai_map'])):
+            if len(L_contact) > 0:
+                i_contact = 0
+                contact_found = L_contact[i_contact][0:2] == [i_grain, j_grain]
+                while not contact_found and i_contact < len(L_contact)-1:
+                    i_contact = i_contact + 1
+                    contact_found = L_contact[i_contact][0:2] == [i_grain, j_grain]
+            else :
+                contact_found = False
+            if dict_sample['i_DEMPF_ite'] == 1:
+                if contact_found:
+                    dict_user['L_L_contact_pressure'].append([L_pressure_tempo[i_contact]])
+                    dict_user['L_L_contact_as'].append([L_as_tempo[i_contact]])
+                else:
+                    dict_user['L_L_contact_pressure'].append([0])
+                    dict_user['L_L_contact_as'].append([1])
+            else :
+                if contact_found:
+                    dict_user['L_L_contact_pressure'][ij].append(L_pressure_tempo[i_contact])
+                    dict_user['L_L_contact_as'][ij].append(L_as_tempo[i_contact])
+                else:
+                    dict_user['L_L_contact_pressure'][ij].append(0)
+                    dict_user['L_L_contact_as'][ij].append(1)
+            ij = ij + 1
+            
+    # plot 
+    plot_as_pressure(dict_user, dict_sample) # from tools.py
 
     # write as
-    write_as_txt(dict_user, dict_sample)
-
-# -----------------------------------------------------------------------------#
-
-def compute_ed(dict_user, dict_sample):
-    '''
-    Compute the average ed in the sample, in the contact zone, in the large contact zone and track ed value at the center of the contact.
-    '''
-    # constants
-    s_mesh = 1*(dict_sample['x_L'][1]-dict_sample['x_L'][0])
-    c_eq = 1
-    k_diss = dict_user['k_diss']
-    k_prec = dict_user['k_prec']
-    v_mesh = 1*(dict_sample['x_L'][1]-dict_sample['x_L'][0])*(dict_sample['y_L'][1]-dict_sample['y_L'][0])
-    conv = 1
-    # compute the map of ed
-    ed_map = np.zeros((len(dict_sample['y_L']), len(dict_sample['x_L'])))
-    # compute mean ed in contact
-    m_ed_contact = 0
-    n_contact = 0
-    m_ed_plus_contact = 0
-    n_plus_contact = 0
-    m_ed_minus_contact = 0
-    n_minus_contact = 0
-    m_ed_large_contact = 0
-    n_large_contact = 0
-    m_ed_plus_large_contact = 0
-    n_plus_large_contact = 0
-    m_ed_minus_large_contact = 0
-    n_minus_large_contact = 0
-    # iterate on mesh
-    for i_x in range(len(dict_sample['x_L'])):
-        for i_y in range(len(dict_sample['y_L'])):
-            # read variables
-            as_value = dict_sample['as_map'][i_y, i_x]
-            c = dict_sample['c_map'][i_y, i_x]
-            # compute and build map
-            if c < c_eq*as_value:
-                ed_value = k_diss*s_mesh*as_value*(1-c/(c_eq*as_value))/v_mesh*conv*2/3
-            else :
-                ed_value = k_prec*s_mesh*as_value*(1-c/(c_eq*as_value))/v_mesh*conv*2/3
-            ed_map[i_y, i_x] = ed_value
-            # compute mean ed in contact
-            if dict_sample['eta_1_map'][i_y, i_x] > dict_user['eta_contact_box_detection'] and dict_sample['eta_2_map'][i_y, i_x] > dict_user['eta_contact_box_detection']:
-                m_ed_contact = m_ed_contact + ed_value
-                n_contact = n_contact + 1
-                if ed_value > 0 :
-                    m_ed_plus_contact = m_ed_plus_contact + ed_value
-                    n_plus_contact = n_plus_contact + 1    
-                else :
-                    m_ed_minus_contact = m_ed_minus_contact + ed_value
-                    n_minus_contact = n_minus_contact + 1   
-            # compute mean ed in large contact
-            if dict_sample['eta_1_map'][i_y, i_x] > 0.05 and dict_sample['eta_2_map'][i_y, i_x] > 0.05:
-                m_ed_large_contact = m_ed_large_contact + ed_value
-                n_large_contact = n_large_contact + 1
-                if ed_value > 0 :
-                    m_ed_plus_large_contact = m_ed_plus_large_contact + ed_value
-                    n_plus_large_contact = n_plus_large_contact + 1    
-                else :
-                    m_ed_minus_large_contact = m_ed_minus_large_contact + ed_value
-                    n_minus_large_contact = n_minus_large_contact + 1 
-    # tracker
-    dict_user['L_m_ed'].append(np.mean(ed_map))
-    add_element_list(dict_user['L_m_ed_contact'], m_ed_contact, n_contact)
-    add_element_list(dict_user['L_m_ed_large_contact'], m_ed_large_contact, n_large_contact)
-    add_element_list(dict_user['L_m_ed_plus_contact'], m_ed_plus_contact, n_plus_contact)
-    add_element_list(dict_user['L_m_ed_minus_contact'], m_ed_minus_contact, n_minus_contact)
-    add_element_list(dict_user['L_m_ed_plus_large_contact'], m_ed_plus_large_contact, n_plus_large_contact)
-    add_element_list(dict_user['L_m_ed_minus_large_contact'], m_ed_minus_large_contact, n_minus_large_contact)
-    
-    # plot
-    if 'm_ed' in dict_user['L_figures']:
-        fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        ax1.plot(dict_user['L_m_ed'])
-        ax1.set_title('Mean tilting factor (-)',fontsize=20)
-        fig.tight_layout()
-        fig.savefig('plot/m_ed.png')
-        plt.close(fig)
-
-    # plot
-    if 'contact_distrib_m_ed' in dict_user['L_figures']:
-        fig, (ax1, ax2) = plt.subplots(1,2,figsize=(16,9))
-        # mean
-        ax1.plot(dict_user['L_m_ed_contact'], label='Contact')
-        ax1.plot(dict_user['L_m_ed_large_contact'], label= 'Large contact')
-        ax1.legend()
-        ax1.set_title('Mean (-)',fontsize=20)
-        # distribution
-        ax2.plot(dict_user['L_m_ed_plus_contact'], label='+ Contact')
-        ax2.plot(dict_user['L_m_ed_minus_contact'], label='- Contact')
-        ax2.plot(dict_user['L_m_ed_plus_large_contact'], label= '+ Large contact')
-        ax2.plot(dict_user['L_m_ed_minus_large_contact'], label= '- Large contact')
-        ax2.legend()
-        ax2.set_title('Mean of + and - (-)')
-        # close
-        plt.suptitle('Mean tilting factor in contact (-)',fontsize=20)
-        fig.tight_layout()
-        fig.savefig('plot/contact_distrib_m_ed.png')
-        plt.close(fig)
-
-    # find nearest node to contact point
-    with open('data/dem_to_main.data', 'rb') as handle:
-        dict_save = pickle.load(handle)
-    contactPoint = dict_save['contact_point']
-    L_search = list(abs(np.array(dict_sample['x_L']-contactPoint[0])))
-    i_x = L_search.index(min(L_search))
-    L_search = list(abs(np.array(dict_sample['y_L']-contactPoint[1])))
-    i_y = L_search.index(min(L_search))
-    # tracker
-    dict_user['L_ed_contact_point'].append(ed_map[-1-i_y, i_x])
-    # plot
-    if 'contact_point_ed' in dict_user['L_figures']:
-        fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        ax1.plot(dict_user['L_ed_contact_point'])
-        ax1.set_title('Tilting factor at contact point (-)',fontsize=20)
-        fig.tight_layout()
-        fig.savefig('plot/contact_point_ed.png')
-        plt.close(fig)
-
-# -----------------------------------------------------------------------------#
-
-def add_element_list(data_list, data_sum, data_n):
-    '''
-    Add element to a list with condition.
-
-    if data_n != 0, add data_sum/data_n
-    else, add 0
-    '''
-    if data_n != 0:
-        data_list.append(data_sum/data_n)
-    else : 
-        data_list.append(0)
-
-# -----------------------------------------------------------------------------#
-
-def compute_dt_PF_Aitken(dict_user, dict_sample):
-    '''
-    Compute the time step used in PF simulation with a method inspired by Aitken.
-
-    Several threshold values are used.
-    '''
-    # level 0
-    if abs(dict_user['L_m_ed_contact'][-1]) < dict_user['Aitken_1']:
-        dict_user['dt_PF'] = dict_user['dt_PF_0']
-    # level 1
-    if dict_user['Aitken_1'] <= abs(dict_user['L_m_ed_contact'][-1]) and abs(dict_user['L_m_ed_contact'][-1]) < dict_user['Aitken_2']:
-        dict_user['dt_PF'] = dict_user['dt_PF_1']
-    # level 2
-    if dict_user['Aitken_2'] <= abs(dict_user['L_m_ed_contact'][-1]) :
-        dict_user['dt_PF'] = dict_user['dt_PF_2']
-    
-    # save and plot
-    dict_user['L_dt_PF'].append(dict_user['dt_PF'])
-    if 'dt_PF' in dict_user['L_figures']:
-        fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        ax1.plot(dict_user['L_dt_PF'])
-        ax1.set_yticks([dict_user['dt_PF_0'], dict_user['dt_PF_1'], dict_user['dt_PF_2']])
-        ax1.set_yticklabels(['Level 0', 'Level 1', 'Level 2'])
-        ax1.set_title('Time step used for PF (s)',fontsize=20)
-        fig.tight_layout()
-        fig.savefig('plot/dt_PF.png')
-        plt.close(fig)
-
-#-------------------------------------------------------------------------------
-
-def write_eta_txt(dict_user, dict_sample):
-    '''
-    Write a .txt file needed for MOOSE simulation.
-
-    This .txt file represent the phase field maps.
-    '''
-    file_to_write_1 = open('data/eta_1.txt','w')
-    file_to_write_2 = open('data/eta_2.txt','w')
-    # x
-    file_to_write_1.write('AXIS X\n')
-    file_to_write_2.write('AXIS X\n')
-    line = ''
-    for x in dict_sample['x_L']:
-        line = line + str(x)+ ' '
-    line = line + '\n'
-    file_to_write_1.write(line)
-    file_to_write_2.write(line)
-    # y
-    file_to_write_1.write('AXIS Y\n')
-    file_to_write_2.write('AXIS Y\n')
-    line = ''
-    for y in dict_sample['y_L']:
-        line = line + str(y)+ ' '
-    line = line + '\n'
-    file_to_write_1.write(line)
-    file_to_write_2.write(line)
-    # data
-    file_to_write_1.write('DATA\n')
-    file_to_write_2.write('DATA\n')
-    for j in range(len(dict_sample['y_L'])):
-        for i in range(len(dict_sample['x_L'])):
-            # grain 1
-            file_to_write_1.write(str(dict_sample['eta_1_map'][-1-j,i])+'\n')
-            # grain 2
-            file_to_write_2.write(str(dict_sample['eta_2_map'][-1-j,i])+'\n')
-    # close
-    file_to_write_1.close()
-    file_to_write_2.close()
-
-#-------------------------------------------------------------------------------
-
-def write_c_txt(dict_user, dict_sample):
-    '''
-    Write a .txt file needed for MOOSE simulation.
-
-    This .txt represents the solute map.
-    '''
-    file_to_write = open('data/c.txt','w')
-    # x
-    file_to_write.write('AXIS X\n')
-    line = ''
-    for x in dict_sample['x_L']:
-        line = line + str(x)+ ' '
-    line = line + '\n'
-    file_to_write.write(line)
-    # y
-    file_to_write.write('AXIS Y\n')
-    line = ''
-    for y in dict_sample['y_L']:
-        line = line + str(y)+ ' '
-    line = line + '\n'
-    file_to_write.write(line)
-    # data
-    file_to_write.write('DATA\n')
-    for j in range(len(dict_sample['y_L'])):
-        for i in range(len(dict_sample['x_L'])):
-            file_to_write.write(str(dict_sample['c_map'][-1-j,i])+'\n')
-    # close
-    file_to_write.close()
-
-#-------------------------------------------------------------------------------
-
-def write_as_txt(dict_user, dict_sample):
-    '''
-    Write a .txt file needed for MOOSE simulation.
-
-    This .txt represents the map of the solid activity.
-    '''
-    file_to_write = open('data/as.txt','w')
-    # x
-    file_to_write.write('AXIS X\n')
-    line = ''
-    for x in dict_sample['x_L']:
-        line = line + str(x)+ ' '
-    line = line + '\n'
-    file_to_write.write(line)
-    # y
-    file_to_write.write('AXIS Y\n')
-    line = ''
-    for y in dict_sample['y_L']:
-        line = line + str(y)+ ' '
-    line = line + '\n'
-    file_to_write.write(line)
-    # data
-    file_to_write.write('DATA\n')
-    for j in range(len(dict_sample['y_L'])):
-        for i in range(len(dict_sample['x_L'])):
-            file_to_write.write(str(dict_sample['as_map'][-1-j,i])+'\n')
-    # close
-    file_to_write.close()
+    write_array_txt(dict_sample, 'as', dict_sample['as_map'])
 
 #-------------------------------------------------------------------------------
 
 def compute_kc(dict_user, dict_sample):
     '''
     Compute the diffusion coefficient of the solute.
-    Then Write a .txt file needed for MOOSE simulation.
+    Then write a .txt file needed for MOOSE simulation.
 
-    This .txt file represent the phase field maps.
+    This .txt file represent the diffusion coefficient map.
     '''
-    # loading old variable
-    c_map = dict_sample['c_map']
-    # updating solute map
-    c_map_new = c_map 
-
     # compute
     kc_map = np.array(np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x'])), dtype = bool)
-    # iterate on x and y
+    kc_pore_map =  np.array(np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x'])), dtype = bool)
+    # iterate on x and y 
     for i_y in range(len(dict_sample['y_L'])):
-        # fast checking
-        if max(dict_sample['eta_1_map'][i_y, :])<0.5 and max(dict_sample['eta_2_map'][i_y, :])<0.5:
-            kc_map[i_y, :] = True
-        # individual checking
-        else :
-            for i_x in range(len(dict_sample['x_L'])):
-                if dict_sample['eta_1_map'][i_y, i_x] < 0.5 and dict_sample['eta_2_map'][i_y, i_x] < 0.5: # out of the grain
-                    kc_map[i_y, i_x] = True
-                elif dict_sample['eta_1_map'][i_y, i_x] > 0.5 and dict_sample['eta_2_map'][i_y, i_x] > 0.5: # in the contact
-                    kc_map[i_y, i_x] = True
-                else :
-                    kc_map[i_y, i_x] = False
+        for i_x in range(len(dict_sample['x_L'])):
+            # count the number of eta > eta_criterion
+            c_eta_crit = 0
+            for i_grain in range(len(dict_sample['L_etai_map'])):
+                if dict_sample['L_etai_map'][i_grain][i_y, i_x] > dict_user['eta_contact_box_detection']:
+                    c_eta_crit = c_eta_crit + 1
+            # compute coefficient of diffusion
+            if c_eta_crit == 0: # out of the grain
+                kc_map[i_y, i_x] = True
+                kc_pore_map[i_y, i_x] = True
+            elif c_eta_crit >= 2: # in the contact
+                kc_map[i_y, i_x] = True
+                kc_pore_map[i_y, i_x] = False
+            else : # in the grain
+                kc_map[i_y, i_x] = False
+                kc_pore_map[i_y, i_x] = False
 
     # dilation
     dilated_M = binary_dilation(kc_map, dict_user['struct_element'])
 
     #compute the map of the solute diffusion coefficient
-    kc_map = dict_user['D_solute']*dilated_M
+    kc_map = dict_user['D_solute']*dilated_M + 99*dict_user['D_solute']*kc_pore_map
+    dict_sample['kc_map'] = kc_map
 
     # write
-    file_to_write_1 = open('data/kc.txt','w')
-    # x
-    file_to_write_1.write('AXIS X\n')
-    line = ''
-    for x in dict_sample['x_L']:
-        line = line + str(x)+ ' '
-    line = line + '\n'
-    file_to_write_1.write(line)
-    # y
-    file_to_write_1.write('AXIS Y\n')
-    line = ''
-    for y in dict_sample['y_L']:
-        line = line + str(y)+ ' '
-    line = line + '\n'
-    file_to_write_1.write(line)
-    # data
-    file_to_write_1.write('DATA\n')
-    for j in range(len(dict_sample['y_L'])):
-        for i in range(len(dict_sample['x_L'])):
-            # grain 1
-            file_to_write_1.write(str(kc_map[-1-j,i])+'\n')
-    # close
-    file_to_write_1.close()
+    write_array_txt(dict_sample, 'kc', dict_sample['kc_map'])
 
     # compute the number of grain detected in kc_map
     invert_dilated_M = np.invert(dilated_M)
@@ -465,280 +398,56 @@ def compute_kc(dict_user, dict_sample):
         fig.savefig('plot/n_grain_detected.png')
         plt.close(fig)
 
+    # loading old variable
+    c_map = dict_sample['c_map']
+    # updating solute map
+    c_map_new = c_map.copy()
+
     # iterate on the mesh
     for i_y in range(len(dict_sample['y_L'])):
         for i_x in range(len(dict_sample['x_L'])):
-            # push solute out of the solid
-            if not dilated_M[i_y, i_x] and c_map[i_y, i_x] > 1: # threshold value
-                solute_moved = False
-                size_window = 1
-                # compute solute to move
-                solute_to_move = c_map[i_y, i_x] - 1
-                while not solute_moved :
-                    i_window = 0
-                    while not solute_moved and i_window <= size_window:
-                        n_node_available = 0
-
-                        #Look to move horizontaly and vertically
-                        if i_window == 0 :
-                            top_available = False
-                            down_available = False
-                            left_available = False
-                            right_available = False
-                            #to the top
-                            if i_y - size_window > 0:
-                                top_available = dilated_M[i_y-size_window, i_x]
-                                if dilated_M[i_y-size_window, i_x] :
-                                    n_node_available = n_node_available + 1
-                            #to the down
-                            if i_y + size_window < len(dict_sample['y_L']):
-                                down_available = dilated_M[i_y+size_window, i_x]
-                                if dilated_M[i_y+size_window, i_x] :
-                                    n_node_available = n_node_available + 1
-                            #to the left
-                            if i_x - size_window > 0:
-                                left_available = dilated_M[i_y, i_x-size_window]
-                                if dilated_M[i_y, i_x-size_window] :
-                                    n_node_available = n_node_available + 1
-                            #to the right
-                            if i_x + size_window < len(dict_sample['x_L']):
-                                right_available = dilated_M[i_y, i_x+size_window]
-                                if dilated_M[i_y, i_x+size_window] :
-                                    n_node_available = n_node_available + 1
-
-                            #move solute if et least one node is available
-                            if n_node_available != 0 :
-                                #to the top
-                                if top_available:
-                                    c_map_new[i_y-size_window, i_x] = c_map_new[i_y-size_window, i_x] + solute_to_move/n_node_available
-                                #to the down
-                                if down_available:
-                                    c_map_new[i_y+size_window, i_x] = c_map_new[i_y+size_window, i_x] + solute_to_move/n_node_available
-                                #to the left
-                                if left_available:
-                                    c_map_new[i_y, i_x-size_window] = c_map_new[i_y, i_x-size_window] + solute_to_move/n_node_available
-                                #to the right
-                                if right_available:
-                                    c_map_new[i_y, i_x+size_window] = c_map_new[i_y, i_x+size_window] + solute_to_move/n_node_available
-                                c_map_new[i_y, i_x] = 1
-                                solute_moved = True
-
-                        #Look to move diagonally
-                        else :
-                            top_min_available = False
-                            top_max_available = False
-                            down_min_available = False
-                            down_max_available = False
-                            left_min_available = False
-                            left_max_available = False
-                            right_min_available = False
-                            right_max_available = False
-                            #to the top
-                            if i_y - size_window > 0:
-                                if i_x - i_window > 0 :
-                                    top_min_available = dilated_M[i_y-size_window, i_x-i_window]
-                                    if dilated_M[i_y-size_window, i_x-i_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_x + i_window < len(dict_sample['x_L']):
-                                    top_max_available = dilated_M[i_y-size_window, i_x+i_window]
-                                    if dilated_M[i_y-size_window, i_x+i_window] :
-                                        n_node_available = n_node_available + 1
-                            #to the down
-                            if i_y + size_window < len(dict_sample['y_L']):
-                                if i_x - i_window > 0 :
-                                    down_min_available = dilated_M[i_y+size_window, i_x-i_window]
-                                    if dilated_M[i_y+size_window, i_x-i_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_x + i_window < len(dict_sample['x_L']):
-                                    down_max_available = dilated_M[i_y+size_window, i_x+i_window]
-                                    if dilated_M[i_y+size_window, i_x+i_window] :
-                                        n_node_available = n_node_available + 1
-                            #to the left
-                            if i_x - size_window > 0:
-                                if i_y - i_window > 0 :
-                                    left_min_available = dilated_M[i_y-i_window, i_x-size_window]
-                                    if dilated_M[i_y-i_window, i_x-size_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_y + i_window < len(dict_sample['y_L']):
-                                    left_max_available = dilated_M[i_y+i_window, i_x-size_window]
-                                    if dilated_M[i_y+i_window, i_x-size_window] :
-                                        n_node_available = n_node_available + 1
-                            #to the right
-                            if i_x + size_window < len(dict_sample['x_L']):
-                                if i_x - i_window > 0 :
-                                    right_min_available = dilated_M[i_y-i_window, i_x+size_window]
-                                    if dilated_M[i_y-i_window, i_x+size_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_y + i_window < len(dict_sample['y_L']):
-                                    right_max_available = dilated_M[i_y+i_window, i_x+size_window]
-                                    if dilated_M[i_y+i_window, i_x+size_window] :
-                                        n_node_available = n_node_available + 1
-
-                            #move solute if et least one node is available
-                            if n_node_available != 0 :
-                                #to the top
-                                if top_min_available:
-                                    c_map_new[i_y-size_window, i_x-i_window] = c_map_new[i_y-size_window, i_x-i_window] + solute_to_move/n_node_available
-                                if top_max_available:
-                                    c_map_new[i_y-size_window, i_x+i_window] = c_map_new[i_y-size_window, i_x+i_window] + solute_to_move/n_node_available
-                                #to the down
-                                if down_min_available:
-                                    c_map_new[i_y+size_window, i_x-i_window] = c_map_new[i_y+size_window, i_x-i_window] + solute_to_move/n_node_available
-                                if down_max_available:
-                                    c_map_new[i_y+size_window, i_x+i_window] = c_map_new[i_y+size_window, i_x+i_window] + solute_to_move/n_node_available
-                                #to the left
-                                if left_min_available:
-                                    c_map_new[i_y-i_window, i_x-size_window] = c_map_new[i_y-i_window, i_x-size_window] + solute_to_move/n_node_available
-                                if left_max_available:
-                                    c_map_new[i_y+i_window, i_x-size_window] = c_map_new[i_y+i_window, i_x-size_window] + solute_to_move/n_node_available
-                                #to the right
-                                if right_min_available:
-                                    c_map_new[i_y-i_window, i_x+size_window] = c_map_new[i_y-i_window, i_x+size_window] + solute_to_move/n_node_available
-                                if right_max_available:
-                                    c_map_new[i_y+i_window, i_x+size_window] = c_map_new[i_y+i_window, i_x+size_window] + solute_to_move/n_node_available
-                                c_map_new[i_y, i_x] = 1
-                                solute_moved = True
-                        i_window = i_window + 1
-                    size_window = size_window + 1   
-
-            # push solute in of the solid
-            if not dilated_M[i_y, i_x] and c_map[i_y, i_x] < 1: # threshold value
-                solute_moved = False
-                size_window = 1
-                # compute solute to move
-                solute_to_move = 1 - c_map[i_y, i_x]
-                while not solute_moved :
-                    i_window = 0
-                    while not solute_moved and i_window <= size_window:
-                        n_node_available = 0
-
-                        #Look to move horizontaly and vertically
-                        if i_window == 0 :
-                            top_available = False
-                            down_available = False
-                            left_available = False
-                            right_available = False
-                            #to the top
-                            if i_y - size_window > 0:
-                                top_available = dilated_M[i_y-size_window, i_x]
-                                if dilated_M[i_y-size_window, i_x] :
-                                    n_node_available = n_node_available + 1
-                            #to the down
-                            if i_y + size_window < len(dict_sample['y_L']):
-                                down_available = dilated_M[i_y+size_window, i_x]
-                                if dilated_M[i_y+size_window, i_x] :
-                                    n_node_available = n_node_available + 1
-                            #to the left
-                            if i_x - size_window > 0:
-                                left_available = dilated_M[i_y, i_x-size_window]
-                                if dilated_M[i_y, i_x-size_window] :
-                                    n_node_available = n_node_available + 1
-                            #to the right
-                            if i_x + size_window < len(dict_sample['x_L']):
-                                right_available = dilated_M[i_y, i_x+size_window]
-                                if dilated_M[i_y, i_x+size_window] :
-                                    n_node_available = n_node_available + 1
-
-                            #move solute if et least one node is available
-                            if n_node_available != 0 :
-                                #to the top
-                                if top_available:
-                                    c_map_new[i_y-size_window, i_x] = c_map_new[i_y-size_window, i_x] - solute_to_move/n_node_available
-                                #to the down
-                                if down_available:
-                                    c_map_new[i_y+size_window, i_x] = c_map_new[i_y+size_window, i_x] - solute_to_move/n_node_available
-                                #to the left
-                                if left_available:
-                                    c_map_new[i_y, i_x-size_window] = c_map_new[i_y, i_x-size_window] - solute_to_move/n_node_available
-                                #to the right
-                                if right_available:
-                                    c_map_new[i_y, i_x+size_window] = c_map_new[i_y, i_x+size_window] - solute_to_move/n_node_available
-                                c_map_new[i_y, i_x] = 1
-                                solute_moved = True
-
-                        #Look to move diagonally
-                        else :
-                            top_min_available = False
-                            top_max_available = False
-                            down_min_available = False
-                            down_max_available = False
-                            left_min_available = False
-                            left_max_available = False
-                            right_min_available = False
-                            right_max_available = False
-                            #to the top
-                            if i_y - size_window > 0:
-                                if i_x - i_window > 0 :
-                                    top_min_available = dilated_M[i_y-size_window, i_x-i_window]
-                                    if dilated_M[i_y-size_window, i_x-i_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_x + i_window < len(dict_sample['x_L']):
-                                    top_max_available = dilated_M[i_y-size_window, i_x+i_window]
-                                    if dilated_M[i_y-size_window, i_x+i_window] :
-                                        n_node_available = n_node_available + 1
-                            #to the down
-                            if i_y + size_window < len(dict_sample['y_L']):
-                                if i_x - i_window > 0 :
-                                    down_min_available = dilated_M[i_y+size_window, i_x-i_window]
-                                    if dilated_M[i_y+size_window, i_x-i_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_x + i_window < len(dict_sample['x_L']):
-                                    down_max_available = dilated_M[i_y+size_window, i_x+i_window]
-                                    if dilated_M[i_y+size_window, i_x+i_window] :
-                                        n_node_available = n_node_available + 1
-                            #to the left
-                            if i_x - size_window > 0:
-                                if i_y - i_window > 0 :
-                                    left_min_available = dilated_M[i_y-i_window, i_x-size_window]
-                                    if dilated_M[i_y-i_window, i_x-size_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_y + i_window < len(dict_sample['y_L']):
-                                    left_max_available = dilated_M[i_y+i_window, i_x-size_window]
-                                    if dilated_M[i_y+i_window, i_x-size_window] :
-                                        n_node_available = n_node_available + 1
-                            #to the right
-                            if i_x + size_window < len(dict_sample['x_L']):
-                                if i_x - i_window > 0 :
-                                    right_min_available = dilated_M[i_y-i_window, i_x+size_window]
-                                    if dilated_M[i_y-i_window, i_x+size_window] :
-                                        n_node_available = n_node_available + 1
-                                if i_y + i_window < len(dict_sample['y_L']):
-                                    right_max_available = dilated_M[i_y+i_window, i_x+size_window]
-                                    if dilated_M[i_y+i_window, i_x+size_window] :
-                                        n_node_available = n_node_available + 1
-
-                            #move solute if et least one node is available
-                            if n_node_available != 0 :
-                                #to the top
-                                if top_min_available:
-                                    c_map_new[i_y-size_window, i_x-i_window] = c_map_new[i_y-size_window, i_x-i_window] - solute_to_move/n_node_available
-                                if top_max_available:
-                                    c_map_new[i_y-size_window, i_x+i_window] = c_map_new[i_y-size_window, i_x+i_window] - solute_to_move/n_node_available
-                                #to the down
-                                if down_min_available:
-                                    c_map_new[i_y+size_window, i_x-i_window] = c_map_new[i_y+size_window, i_x-i_window] - solute_to_move/n_node_available
-                                if down_max_available:
-                                    c_map_new[i_y+size_window, i_x+i_window] = c_map_new[i_y+size_window, i_x+i_window] - solute_to_move/n_node_available
-                                #to the left
-                                if left_min_available:
-                                    c_map_new[i_y-i_window, i_x-size_window] = c_map_new[i_y-i_window, i_x-size_window] - solute_to_move/n_node_available
-                                if left_max_available:
-                                    c_map_new[i_y+i_window, i_x-size_window] = c_map_new[i_y+i_window, i_x-size_window] - solute_to_move/n_node_available
-                                #to the right
-                                if right_min_available:
-                                    c_map_new[i_y-i_window, i_x+size_window] = c_map_new[i_y-i_window, i_x+size_window] - solute_to_move/n_node_available
-                                if right_max_available:
-                                    c_map_new[i_y+i_window, i_x+size_window] = c_map_new[i_y+i_window, i_x+size_window] - solute_to_move/n_node_available
-                                c_map_new[i_y, i_x] = 1
-                                solute_moved = True
-                        i_window = i_window + 1
-                    size_window = size_window + 1   
-
+            if not dilated_M[i_y, i_x]: 
+                c_map_new[i_y, i_x] = dict_user['C_eq']
+    
+    # HERE MUST BE MODIFIED
+    # Move the solute to connserve the mass
+                    
     # save data
     dict_sample['c_map'] = c_map_new
 
     # write txt for the solute concentration map
-    write_c_txt(dict_user, dict_sample) # solute
+    write_array_txt(dict_sample, 'c', dict_sample['c_map'])
+
+#-------------------------------------------------------------------------------
+
+def write_array_txt(dict_sample, namefile, data_array):
+    '''
+    Write a .txt file needed for MOOSE simulation.
+
+    This .txt represents the map of a numpy array.
+    '''
+    file_to_write = open('data/'+namefile+'.txt','w')
+    # x
+    file_to_write.write('AXIS X\n')
+    line = ''
+    for x in dict_sample['x_L']:
+        line = line + str(x)+ ' '
+    line = line + '\n'
+    file_to_write.write(line)
+    # y
+    file_to_write.write('AXIS Y\n')
+    line = ''
+    for y in dict_sample['y_L']:
+        line = line + str(y)+ ' '
+    line = line + '\n'
+    file_to_write.write(line)
+    # data
+    file_to_write.write('DATA\n')
+    for j in range(len(dict_sample['y_L'])):
+        for i in range(len(dict_sample['x_L'])):
+            file_to_write.write(str(data_array[-1-j, i])+'\n')
+    # close
+    file_to_write.close()
 
 #-------------------------------------------------------------------------------
 
@@ -768,199 +477,243 @@ def write_i(dict_user, dict_sample):
       line = line[:-1] + ' ' + str(min(dict_sample['y_L']))+'\n'
     elif j == 9:
       line = line[:-1] + ' ' + str(max(dict_sample['y_L']))+'\n'
-    elif j == 116:
+    elif j == 14:
+      line = ''
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line + '\t[./eta'+str(i_grain+1)+']\n'+\
+                      '\t\torder = FIRST\n'+\
+                      '\t\tfamily = LAGRANGE\n'+\
+                      '\t\t[./InitialCondition]\n'+\
+                      '\t\t\ttype = FunctionIC\n'+\
+                      '\t\t\tfunction = eta'+str(i_grain+1)+'_txt\n'+\
+                      '\t\t[../]\n'+\
+                      '\t[../]\n'
+    elif j == 24:
+      line = ''
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line + '\t# Order parameter eta'+str(i_grain+1)+'\n'+\
+                      '\t[./deta'+str(i_grain+1)+'dt]\n'+\
+                      '\t\ttype = TimeDerivative\n'+\
+                      '\t\tvariable = eta'+str(i_grain+1)+'\n'+\
+                      '\t[../]\n'+\
+                      '\t[./ACBulk'+str(i_grain+1)+']\n'+\
+                      '\t\ttype = AllenCahn\n'+\
+                      '\t\tvariable = eta'+str(i_grain+1)+'\n'+\
+                      '\t\tmob_name = L\n'+\
+                      '\t\tf_name = F_total\n'+\
+                      '\t[../]\n'+\
+                      '\t[./ACInterface'+str(i_grain+1)+']\n'+\
+                      '\t\ttype = ACInterface\n'+\
+                      '\t\tvariable = eta'+str(i_grain+1)+'\n'+\
+                      '\t\tmob_name = L\n'+\
+                      "\t\tkappa_name = 'kappa_eta'\n"+\
+                      '\t[../]\n'
+    elif j == 30:
+      line = ''
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line + '\t[./eta'+str(i_grain+1)+'_c]\n'+\
+                      '\t\ttype = CoefCoupledTimeDerivative\n'+\
+                      "\t\tv = 'eta"+str(i_grain+1)+"'\n"+\
+                      '\t\tvariable = c\n'+\
+                      '\t\tcoef = '+str(1/dict_user['V_m'])+'\n'+\
+                      '\t[../]\n'    
+    elif j == 43:
       line = line[:-1] + "'"+str(dict_user['Mobility_eff'])+' '+str(dict_user['kappa_eta'])+" 1'\n"
-    elif j == 138:
-      line = line[:-1] + ' ' + str(dict_user['Energy_barrier'])+"'\n"
-    elif j == 151:
-      line = line[:-1] + "'" + str(1*(dict_sample['x_L'][1]-dict_sample['x_L'][0]))\
-                       + ' 1 ' + str(dict_user['k_diss']) + ' ' + str(dict_user['k_prec']) + ' '\
-                       + str(1*(dict_sample['x_L'][1]-dict_sample['x_L'][0])*(dict_sample['y_L'][1]-dict_sample['y_L'][0])) + " 1'\n"
-    elif j == 219:
+    elif j == 63:
+      line = line[:-1] + "'"
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'eta'+str(i_grain+1)+' '
+      line = line[:-1] + "'\n"
+    elif j == 65:
+      line = line[:-1] + "'" + str(dict_user['Energy_barrier'])+"'\n"
+    elif j == 66:
+      line = line[:-1] + "'"
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'h*(eta'+str(i_grain+1)+'^2*(1-eta'+str(i_grain+1)+')^2)+'
+      line = line[:-1] + "'\n"
+    elif j == 75:
+      line = line[:-1] + "'"
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'eta'+str(i_grain+1)+' '
+      line = line + "c'\n"
+    elif j == 78:
+      line = line[:-1] + "'" + str(dict_user['C_eq']) + ' ' + str(dict_user['k_diss']) + ' ' + str(dict_user['k_prec']) + "'\n"
+    elif j == 79:
+      line = line[:-1] + "'if(c<c_eq*as,k_diss,k_prec)*as*(1-c/(c_eq*as))*("
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'3*eta'+str(i_grain+1)+'^2-2*eta'+str(i_grain+1)+'^3+'
+      line = line[:-1] +")'\n"
+    elif j == 88:
+      line = line[:-1] + "'"
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'eta'+str(i_grain+1)+' '
+      line = line + "c'\n"
+    elif j == 89:
+      line = line[:-1] + "'F("
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'eta'+str(i_grain+1)+','
+      line = line[:-1] + ") Ed("
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line +'eta'+str(i_grain+1)+','
+      line = line + "c)'\n"
+    elif j == 98:
+      line = ''
+      for i_grain in range(len(dict_sample['L_phii_map'])):
+        line = line + '\t[eta'+str(i_grain+1)+'_txt]\n'+\
+                      '\t\ttype = PiecewiseMultilinear\n'+\
+                      "\t\tdata_file = data/eta_"+str(i_grain+1)+".txt\n"+\
+                      '\t[]\n'   
+    elif j == 132 or j == 133 or j == 135 or j == 136:
+      line = line[:-1] + ' ' + str(dict_user['crit_res']) +'\n'
+    elif j == 139:
       line = line[:-1] + ' ' + str(dict_user['dt_PF']*dict_user['n_t_PF']) +'\n'
-    elif j == 223:
+    elif j == 143:
       line = line[:-1] + ' ' + str(dict_user['dt_PF']) +'\n'
     file_to_write.write(line)
 
   file_to_write.close()
+    
+#-------------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------#
-
-def sort_files_yade():
-  '''
-  Sort vtk files from yade simulation.
-  '''
-  # look for the next indice
-  j = 0
-  filepath = Path('vtk/grains_'+str(j)+'.vtk')
-  while filepath.exists():
-      j = j + 1
-      filepath = Path('vtk/grains_'+str(j)+'.vtk')
-  # rename
-  os.rename('vtk/grains-polyhedra-00000000.vtk','vtk/grains_'+str(j)+'.vtk')
-  os.rename('vtk/grains-polyhedra-00000001.vtk','vtk/grains_'+str(j+1)+'.vtk')
-
-# -----------------------------------------------------------------------------#
-
-def compute_contact_volume(dict_user, dict_sample):
+def sort_dem_files(dict_user, dict_sample):
     '''
-    Characterize the contact volume.
+    Sort the files from the YADE simulation.
     '''
-    # build a polyhedra of the contact volume
-    L_vertices = interpolate_vertices_contact(dict_sample['eta_1_map'], dict_sample['eta_2_map'], dict_user, dict_sample)
-    # adapt for plot and search box sizes
-    L_vertices_x = []
-    L_vertices_y = []
-    min_set = False # bool for the first iteration
-    for v in L_vertices:
-        L_vertices_x.append(v[0])
-        L_vertices_y.append(v[1])
-        # set min, max values with the first vertex
-        if not min_set :
-            min_x = v[0]
-            max_x = v[0]
-            min_y = v[1]
-            max_y = v[1]
-            min_set = True
-        # compare to find extremum
-        else :
-            if v[0] < min_x:
-                min_x = v[0]
-            if max_x < v[0]:
-                max_x = v[0]
-            if v[1] < min_y:
-                min_y = v[1]
-            if max_y < v[1]:
-                max_y = v[1]
-    L_vertices_x.append(L_vertices_x[0])
-    L_vertices_y.append(L_vertices_y[0])
+    # rename files
+    os.rename('vtk/ite_PFDEM_'+str(dict_sample['i_DEMPF_ite'])+'_lsBodies.0.vtm',\
+                'vtk/ite_PFDEM_'+str(dict_sample['i_DEMPF_ite'])+'.vtm')
 
-    # save box contact
-    dict_sample['box_contact_x_min'] = min_x
-    dict_sample['box_contact_x_max'] = max_x
-    dict_sample['box_contact_y_min'] = min_y
-    dict_sample['box_contact_y_max'] = max_y
+#-------------------------------------------------------------------------------
 
-    # capturing the grains boundaries
-    L_vertices_1 = interpolate_vertices(dict_sample['eta_1_map'], dict_sample['pos_1'], dict_user, dict_sample) # from pf_to_dem.py
-    L_vertices_2 = interpolate_vertices(dict_sample['eta_2_map'], dict_sample['pos_2'], dict_user, dict_sample) # from pf_to_dem.py
+def sort_phase_variable(dict_user, dict_sample):
+    '''
+    Reduce the number of phase variables used by combining them.
+    '''
+    # preparation of the lists
+    L_i_etaj_neighbor = []
+    for i_eta in range(len(dict_sample['L_etai_map'])):
+        L_i_etaj_neighbor.append([])
+    # preparation of the dilation
+    binary_structure = np.ones((4,4))
+
+    # detect etas neighbor
+    for i_eta in range(len(dict_sample['L_etai_map'])-1):
+        # compute mask of i_eta
+        mask_i = dict_sample['L_etai_map'][i_eta].copy() > dict_user['eta_contact_box_detection']
+        # dilatex
+        mask_i = binary_dilation(mask_i, binary_structure)
+        # iterate on others etas
+        for j_eta in range(i_eta+1, len(dict_sample['L_etai_map'])):
+            # compute mask of j_eta
+            mask_j = dict_sample['L_etai_map'][j_eta].copy() > dict_user['eta_contact_box_detection']
+            # dilate
+            mask_j = binary_dilation(mask_j, binary_structure)
+            # iteration on the mesh
+            neighbors = False
+            i_x = 0
+            while not neighbors and i_x < dict_user['n_mesh_x']:
+                i_y = 0 
+                while not neighbors and i_y < dict_user['n_mesh_y']:
+                    if mask_i[i_y, i_x] and mask_j[i_y, i_x] :
+                        neighbors = True
+                    i_y = i_y + 1
+                i_x = i_x + 1
+            # save
+            if neighbors:
+                L_i_etaj_neighbor[i_eta].append(j_eta)
+                L_i_etaj_neighbor[j_eta].append(i_eta)
+    
+    # sort etas in phis
+    L_phi_L_etas = [[]]
+    L_phi_neighbors = [[]]
+    L_random_etai = list(range(len(dict_sample['L_etai_map'])))
+    random.shuffle(L_random_etai)
+
+    for eta_i in L_random_etai:
+        included = False
+        # iteration on phis
+        phi_i = 0
+        while not included and phi_i < len(L_phi_L_etas):
+            if eta_i not in L_phi_neighbors[phi_i]:
+                included = True
+                L_phi_L_etas[phi_i].append(eta_i)
+                for neighbor in L_i_etaj_neighbor[eta_i]:
+                    if neighbor not in L_phi_neighbors[phi_i]:
+                        L_phi_neighbors[phi_i].append(neighbor)
+            phi_i = phi_i + 1
+        # creation of a new phi
+        if not included:
+            L_phi_L_etas.append([eta_i])
+            L_phi_neighbors.append(L_i_etaj_neighbor[eta_i])
+    
+    # compute phi maps and box
+    L_phi = []
+    L_phi_L_boxs = []
+    for phi_i in range(len(L_phi_L_etas)):
+        # initialization
+        phi_i_map = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
+        L_boxs = []
+        # iteration on etas of this phi
+        for eta_i in L_phi_L_etas[phi_i]:
+            # sum etas
+            phi_i_map = phi_i_map + dict_sample['L_etai_map'][eta_i]    
+            
+            # look for box
+            # -x limit
+            i_x = 0
+            found = False
+            while (not found) and (i_x < dict_sample['L_etai_map'][eta_i].shape[1]):
+                if np.max(dict_sample['L_etai_map'][eta_i][:, i_x]) < dict_user['eta_contact_box_detection']:
+                    i_x_min = i_x
+                else :
+                    found = True
+                i_x = i_x + 1
+            # +x limit
+            i_x = dict_sample['L_etai_map'][eta_i].shape[1]-1
+            found = False
+            while not found and 0 <= i_x:
+                if np.max(dict_sample['L_etai_map'][eta_i][:, i_x]) < dict_user['eta_contact_box_detection']:
+                    i_x_max = i_x
+                else :
+                    found = True
+                i_x = i_x - 1
+            # -y limit
+            i_y = 0
+            found = False
+            while (not found) and (i_y < dict_sample['L_etai_map'][eta_i].shape[0]):
+                if np.max(dict_sample['L_etai_map'][eta_i][i_y, :]) < dict_user['eta_contact_box_detection']:
+                    i_y_min = i_y
+                else :
+                    found = True
+                i_y = i_y + 1
+            # +y limit
+            i_y = dict_sample['L_etai_map'][eta_i].shape[0]-1
+            found = False
+            while not found and 0 <= i_y:
+                if np.max(dict_sample['L_etai_map'][eta_i][i_y, :]) < dict_user['eta_contact_box_detection']:
+                    i_y_max = i_y
+                else :
+                    found = True
+                i_y = i_y - 1            
+            # save
+            L_boxs.append([i_x_min, i_x_max, i_y_min, i_y_max])
+        # save
+        L_phi.append(phi_i_map)
+        L_phi_L_boxs.append(L_boxs)
+
+    # save
+    dict_sample['L_phi_L_etas'] = L_phi_L_etas   
+    dict_sample['L_phi_L_boxs'] = L_phi_L_boxs   
+    dict_sample['L_phii_map'] = L_phi       
 
     # plot
-    if 'contact_detection' in dict_user['L_figures']:
+    for i_phi in range(len(dict_sample['L_phii_map'])):
         fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        # g1
-        L_x, L_y = tuplet_to_list_no_centerized(L_vertices_1) # from tools.py
-        ax1.plot(L_x, L_y, label='G1')
-        # g2
-        L_x, L_y = tuplet_to_list_no_centerized(L_vertices_2) # from tools.py
-        ax1.plot(L_x, L_y, label='G2')
-        # contact 
-        #ax1.plot(L_vertices_x, L_vertices_y, 'x', label='Contact')
-        # box contact
-        ax1.plot([min_x, max_x, max_x, min_x, min_x], [min_y, min_y, max_y, max_y, min_y], label='Contact Box')
-        # close
-        ax1.legend()
-        ax1.axis('equal')
-        plt.suptitle('Contact Detection', fontsize=20)
+        im = ax1.imshow(dict_sample['L_phii_map'][i_phi], interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]))
+        fig.colorbar(im, ax=ax1)
+        ax1.set_title(r'$\phi$'+str(i_phi),fontsize = 30)
         fig.tight_layout()
-        if dict_user['print_all_contact_detection']:
-            fig.savefig('plot/contact_detection/'+str(dict_sample['i_DEMPF_ite'])+'.png')
-        else:
-            fig.savefig('plot/contact_detection.png')
+        fig.savefig('plot/phi_'+str(i_phi)+'.png')
         plt.close(fig)
 
-# -----------------------------------------------------------------------------#
-
-def interpolate_vertices_contact(eta_1_map, eta_2_map, dict_user, dict_sample):
-    '''
-    Interpolate vertices for a contact between two polyhedrons.
-    '''
-    L_vertices = []
-    for i_x in range(len(dict_sample['x_L'])-1):
-        for i_y in range(len(dict_sample['y_L'])-1):
-            L_in_1 = [] # list the nodes inside the grain 1
-            if eta_1_map[-1-i_y    , i_x] > dict_user['eta_contact_box_detection'] :
-                L_in_1.append(0)
-            if eta_1_map[-1-(i_y+1), i_x] > dict_user['eta_contact_box_detection'] :
-                L_in_1.append(1)
-            if eta_1_map[-1-(i_y+1), i_x+1] > dict_user['eta_contact_box_detection'] :
-                L_in_1.append(2)
-            if eta_1_map[-1-i_y    , i_x+1] > dict_user['eta_contact_box_detection'] :
-                L_in_1.append(3)
-            m_eta_1 = (eta_1_map[-1-i_y, i_x]+eta_1_map[-1-(i_y+1), i_x]+eta_1_map[-1-(i_y+1), i_x+1]+eta_1_map[-1-i_y, i_x+1])/4
-            L_in_2 = [] # list the nodes inside the grain 2
-            if eta_2_map[-1-i_y    , i_x] > dict_user['eta_contact_box_detection'] :
-                L_in_2.append(0)
-            if eta_2_map[-1-(i_y+1), i_x] > dict_user['eta_contact_box_detection'] :
-                L_in_2.append(1)
-            if eta_2_map[-1-(i_y+1), i_x+1] > dict_user['eta_contact_box_detection'] :
-                L_in_2.append(2)
-            if eta_2_map[-1-i_y    , i_x+1] > dict_user['eta_contact_box_detection'] :
-                L_in_2.append(3)
-            m_eta_2 = (eta_2_map[-1-i_y, i_x]+eta_2_map[-1-(i_y+1), i_x]+eta_2_map[-1-(i_y+1), i_x+1]+eta_2_map[-1-i_y, i_x+1])/4
-            
-            if (L_in_1 != [] and L_in_1 != [0,1,2,3]) and (m_eta_2>dict_user['eta_contact_box_detection']):
-                # iterate on the lines of the mesh to find the plane intersection for grain 1
-                L_p_1 = []
-                if (0 in L_in_1 and 1 not in L_in_1) or (0 not in L_in_1 and 1 in L_in_1):# line 01
-                    x_p = dict_sample['x_L'][i_x]
-                    y_p = (dict_user['eta_contact_box_detection']-eta_1_map[-1-i_y, i_x])/(eta_1_map[-1-(i_y+1), i_x]-eta_1_map[-1-i_y, i_x])*(dict_sample['y_L'][i_y+1]-dict_sample['y_L'][i_y])+dict_sample['y_L'][i_y]
-                    L_p_1.append(np.array([x_p, y_p]))
-                if (1 in L_in_1 and 2 not in L_in_1) or (1 not in L_in_1 and 2 in L_in_1):# line 12
-                    x_p = (dict_user['eta_contact_box_detection']-eta_1_map[-1-(i_y+1), i_x])/(eta_1_map[-1-(i_y+1), i_x+1]-eta_1_map[-1-(i_y+1), i_x])*(dict_sample['x_L'][i_x+1]-dict_sample['x_L'][i_x])+dict_sample['x_L'][i_x]
-                    y_p = dict_sample['y_L'][i_y+1]
-                    L_p_1.append(np.array([x_p, y_p]))
-                if (2 in L_in_1 and 3 not in L_in_1) or (2 not in L_in_1 and 3 in L_in_1):# line 23
-                    x_p = dict_sample['x_L'][i_x+1]
-                    y_p = (dict_user['eta_contact_box_detection']-eta_1_map[-1-i_y, i_x+1])/(eta_1_map[-1-(i_y+1), i_x+1]-eta_1_map[-1-i_y, i_x+1])*(dict_sample['y_L'][i_y+1]-dict_sample['y_L'][i_y])+dict_sample['y_L'][i_y]
-                    L_p_1.append(np.array([x_p, y_p]))
-                if (3 in L_in_1 and 0 not in L_in_1) or (3 not in L_in_1 and 0 in L_in_1):# line 30
-                    x_p = (dict_user['eta_contact_box_detection']-eta_1_map[-1-i_y, i_x])/(eta_1_map[-1-i_y, i_x+1]-eta_1_map[-1-i_y, i_x])*(dict_sample['x_L'][i_x+1]-dict_sample['x_L'][i_x])+dict_sample['x_L'][i_x]
-                    y_p = dict_sample['y_L'][i_y]
-                    L_p_1.append(np.array([x_p, y_p]))
-                # compute the mean point
-                p_mean_1 = np.array([0,0])
-                for p in L_p_1 :
-                    p_mean_1 = p_mean_1 + p
-                p_mean_1 = p_mean_1/len(L_p_1)
-                p_mean_1_b = True
-            else :
-                p_mean_1_b = False
-
-            if (m_eta_1>dict_user['eta_contact_box_detection']) and (L_in_2 != [] and L_in_2 != [0,1,2,3]):
-                # iterate on the lines of the mesh to find the plane intersection for grain 2
-                L_p_2 = []
-                if (0 in L_in_2 and 1 not in L_in_2) or (0 not in L_in_2 and 1 in L_in_2):# line 01
-                    x_p = dict_sample['x_L'][i_x]
-                    y_p = (dict_user['eta_contact_box_detection']-eta_2_map[-1-i_y, i_x])/(eta_2_map[-1-(i_y+1), i_x]-eta_2_map[-1-i_y, i_x])*(dict_sample['y_L'][i_y+1]-dict_sample['y_L'][i_y])+dict_sample['y_L'][i_y]
-                    L_p_2.append(np.array([x_p, y_p]))
-                if (1 in L_in_2 and 2 not in L_in_2) or (1 not in L_in_2 and 2 in L_in_2):# line 12
-                    x_p = (dict_user['eta_contact_box_detection']-eta_2_map[-1-(i_y+1), i_x])/(eta_2_map[-1-(i_y+1), i_x+1]-eta_2_map[-1-(i_y+1), i_x])*(dict_sample['x_L'][i_x+1]-dict_sample['x_L'][i_x])+dict_sample['x_L'][i_x]
-                    y_p = dict_sample['y_L'][i_y+1]
-                    L_p_2.append(np.array([x_p, y_p]))
-                if (2 in L_in_2 and 3 not in L_in_2) or (2 not in L_in_2 and 3 in L_in_2):# line 23
-                    x_p = dict_sample['x_L'][i_x+1]
-                    y_p = (dict_user['eta_contact_box_detection']-eta_2_map[-1-i_y, i_x+1])/(eta_2_map[-1-(i_y+1), i_x+1]-eta_2_map[-1-i_y, i_x+1])*(dict_sample['y_L'][i_y+1]-dict_sample['y_L'][i_y])+dict_sample['y_L'][i_y]
-                    L_p_2.append(np.array([x_p, y_p]))
-                if (3 in L_in_2 and 0 not in L_in_2) or (3 not in L_in_2 and 0 in L_in_2):# line 30
-                    x_p = (dict_user['eta_contact_box_detection']-eta_2_map[-1-i_y, i_x])/(eta_2_map[-1-i_y, i_x+1]-eta_2_map[-1-i_y, i_x])*(dict_sample['x_L'][i_x+1]-dict_sample['x_L'][i_x])+dict_sample['x_L'][i_x]
-                    y_p = dict_sample['y_L'][i_y]
-                    L_p_2.append(np.array([x_p, y_p]))
-                # compute the mean point
-                p_mean_2 = np.array([0,0])
-                for p in L_p_2 :
-                    p_mean_2 = p_mean_2 + p
-                p_mean_2 = p_mean_2/len(L_p_2)
-                p_mean_2_b = True
-            else :
-                p_mean_2_b = False
-                
-            if p_mean_1_b and not p_mean_2_b :
-                L_vertices.append(p_mean_1)
-            if not p_mean_1_b and p_mean_2_b :
-                L_vertices.append(p_mean_2)
-            elif p_mean_1_b and p_mean_2_b :
-                # compute a commun vertex
-                L_vertices.append((p_mean_1+p_mean_2)/2)
-
-    return L_vertices
+        

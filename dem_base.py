@@ -1,150 +1,70 @@
 # -*- encoding=utf-8 -*-
 
 from yade import pack, utils, plot, export
-import polyhedra_utils
 import pickle
 import numpy as np
 
 # -----------------------------------------------------------------------------#
-# Own functions
-
-def create_plots():
-    '''
-    Create plots during the DEM step.
-    '''
-    plot.plots = {'iteration': ('sample_height'),'iteration ':('normal_force','force_applied')}
-
+# Functions called once
 # -----------------------------------------------------------------------------#
 
 def create_materials():
     '''
     Create materials.
     '''
-    O.materials.append(PolyhedraMat(young=E, poisson=Poisson, frictionAngle=math.atan(0.5), density=2000, label='Grain'))
-    O.materials.append(PolyhedraMat(young=10*E, poisson=Poisson, frictionAngle=0, density=2000, label='Wall'))
+    O.materials.append(FrictMat(young=E, poisson=Poisson, frictionAngle=atan(0.5), density=density, label='frictMat'))
+    O.materials.append(FrictMat(young=E, poisson=Poisson, frictionAngle=0, density=density, label='frictlessMat'))
 
 # -----------------------------------------------------------------------------#
 
-def create_polyhedral():
+def create_grains():
     '''
-    Recreate polyhedra from data extrapolated with phase field output.
+    Recreate level set from data extrapolated with phase field output.
     '''
-    print("Creating polyhedra")
+    print("Creating level set")
+    for i_grain in range(len(L_sdf_i_map)):
 
-    for i_g in range(len(L_L_vertices)):
-        # compute vertices
-        L_vertices_i = L_L_vertices[i_g]
-        # create particle
+        # grid
+        spacing = L_x_L_i[i_grain][1]-L_x_L_i[i_grain][0]
+        grid = RegularGrid(
+            min=(min(L_x_L_i[i_grain]), min(L_y_L_i[i_grain]), -extrude_z*spacing/2),
+            nGP=(len(L_x_L_i[i_grain]), len(L_y_L_i[i_grain]), extrude_z),
+            spacing=spacing
+        )  
+
+        # grid
         O.bodies.append(
-            polyhedra_utils.polyhedra(
-                O.materials[0],
-                v = L_vertices_i,
-                fixed = True))
-        O.bodies[-1].state.refPos = O.bodies[-1].state.pos
-        O.bodies[-1].state.blockedDOFs = 'zXY'
+            levelSetBody(grid=grid,
+                        distField=L_sdf_i_map[i_grain].tolist(),
+                        material=0)
+                        )
+        O.bodies[-1].state.blockedDOFs = 'zXYZ'
+        O.bodies[-1].state.pos = L_rbm_to_apply[i_grain]
+        O.bodies[-1].state.refPos = L_rbm_to_apply[i_grain]
 
-    # initial export
-    vtkExporter.exportPolyhedra()
-
-# ------------------------------------------------------------------------------------------------------------------------------------------ #
+# -----------------------------------------------------------------------------#
 
 def create_walls():
     '''
-    Create walls (infinite plane).
+    Recreate walls.
     '''
-    O.bodies.append(utils.wall(x_min_wall, axis=0, sense=1 , material=O.materials[1])) 
-    O.bodies.append(utils.wall(x_max_wall, axis=0, sense=-1, material=O.materials[1])) 
-    O.bodies.append(utils.wall(y_min_wall, axis=1, sense=1 , material=O.materials[1])) 
-    O.bodies.append(utils.wall(y_max_wall, axis=1, sense=-1, material=O.materials[1]))    
-    global id_y_max_wall
-    id_y_max_wall = O.bodies[-1].id
+    # -x
+    O.bodies.append(wall((L_pos_w[0], 0, 0), 0, material=1))
+    # +x
+    O.bodies.append(wall((L_pos_w[1], 0, 0), 0, material=1))
+    # -y
+    O.bodies.append(wall((0, L_pos_w[2], 0), 1, material=1))
+    # +y
+    O.bodies.append(wall((0, L_pos_w[3], 0), 1, material=1))
 
 # -----------------------------------------------------------------------------#
 
-def create_engines():
+def create_plots():
     '''
-    Create engines.
-
-    Ip2_PolyhedraMat_PolyhedraMat_PolyhedraPhys 
-    Normal: 1/kn = 1/Y1 + 1/Y2 
-    Shear: 1/ks = 1/Y1v1 + 1/Y2v2
-    Y is the Young modulus
-    v is the Poisson ratio
-
-    Law2_PolyhedraGeom_PolyhedraPhys_Volumetric 
-    F = k N
-    Force is proportionnal to the volume
+    Create plots during the DEM step.
     '''
-    O.engines = [
-            ForceResetter(),
-            InsertionSortCollider([Bo1_Polyhedra_Aabb(), Bo1_Wall_Aabb()]),
-            InteractionLoop(
-                    [Ig2_Polyhedra_Polyhedra_PolyhedraGeom(), Ig2_Wall_Polyhedra_PolyhedraGeom()],
-                    [Ip2_PolyhedraMat_PolyhedraMat_PolyhedraPhys()],
-                    [Law2_PolyhedraGeom_PolyhedraPhys_Volumetric()]
-            ),
-    		PyRunner(command='control_top()',iterPeriod=1),
-            NewtonIntegrator(damping=0.5, exactAsphericalRot=True, gravity=[0, 0, 0], label='newton'),
-    		PyRunner(command='add_data()',iterPeriod=1),
-            PyRunner(command='check()',iterPeriod=1, label='checker')
-    ]
-
-# -----------------------------------------------------------------------------#
-
-def control_top():
-    '''
-    Control the top wall position to apply force.
-    '''
-    # compute force applied on the top wall
-    global F_top_wall, y_max_wall
-    F_top_wall = 0
-    for inter in O.interactions.all():
-        if inter.isReal: # check the contact exists
-            if inter.id1 == id_y_max_wall: # Force from wall to grain
-                F_top_wall = F_top_wall - inter.phys.normalForce[1]
-            if inter.id2 == id_y_max_wall: # Force from grain to wall
-                F_top_wall = F_top_wall + inter.phys.normalForce[1]
-
-    # control (linear)
-    d_y_max_wall = k_control_force * (F_top_wall-force_applied)
-    d_y_max_wall = np.sign(d_y_max_wall)*min(abs(d_y_max_wall), d_y_limit) 
-    y_max_wall = y_max_wall + d_y_max_wall 
-    # move wall
-    O.bodies[id_y_max_wall].state.pos = [0, y_max_wall, 0]
-
-# -----------------------------------------------------------------------------#
-
-def add_data():
-    '''
-    Add data to plot :
-        - iteration
-        - overlap between the two particles (>0 if overlap)
-    '''
-    sample_height = y_max_wall-y_min_wall
-    normal_force = F_top_wall
-    # save
-    plot.addData(iteration=O.iter, sample_height=sample_height, normal_force=normal_force, force_applied=force_applied)
-
-# -----------------------------------------------------------------------------#
-
-def check():
-    '''
-    Try to detect a wteady-state of the overlap between the two particles.
-    A maximum number of iteration is used.
-    '''
-    if O.iter < max(n_ite_max*0.01, n_steady_state_detection):
-        return
-    window = plot.data['normal_force'][-n_steady_state_detection:]
-    if O.iter > n_ite_max or \
-       ((max(window)-min(window))<steady_state_detection*force_applied and
-        max(window)>force_applied and min(window)<force_applied):
-        vtkExporter.exportPolyhedra() # final export
-        if print_dem:
-            if print_all_dem:
-                plot.plot(noShow=True).savefig('plot/dem/'+str(i_DEMPF_ite)+'.png')
-            else:
-                plot.plot(noShow=True).savefig('plot/dem.png')
-        O.pause() # stop DEM simulation
+    plot.plots = {'iteration': ('f_w_control'), 'iteration ': ('pos_w_control'), \
+                  'pos_w_control': ('f_w_control'), 'iteration  ': ('unbalForce')}
 
 # -----------------------------------------------------------------------------#
 
@@ -152,125 +72,182 @@ def compute_dt():
     '''
     Compute the time step used in the DEM step.
     '''
-    O.dt = 0.1 * polyhedra_utils.PWaveTimeStep()
+    O.dt = 0.2*SpherePWaveTimeStep(radius=5*m_size, density=density, young=E)
 
-# ------------------------------------------------------------------------------------------------------------------------------------------ #
+# -----------------------------------------------------------------------------#
+
+def create_engines():
+    '''
+    Create engines.
+
+    Overlap based on the distance
+
+    Ip2:
+        kn = given
+        ks = given    
+
+    Law2:
+        Fn = kn.un
+        Fs = ks.us
+    '''
+    O.engines = [
+            VTKRecorder(recorders=["lsBodies"], fileName='./vtk/ite_PFDEM_'+str(i_DEMPF_ite)+'_', iterPeriod=0, multiblockLS=True, label='initial_export'),
+            ForceResetter(),
+            InsertionSortCollider([Bo1_LevelSet_Aabb(), Bo1_Wall_Aabb()], verletDist=0.00),
+            InteractionLoop(
+                    [Ig2_LevelSet_LevelSet_ScGeom(), Ig2_Wall_LevelSet_ScGeom()],
+                    [Ip2_FrictMat_FrictMat_FrictPhys(kn=MatchMaker(algo='val', val=kn), ks=MatchMaker(algo='val', val=ks))],
+                    [Law2_ScGeom_FrictPhys_CundallStrack(sphericalBodies=False)]),
+            PyRunner(command='applied_force()',iterPeriod=1, label='apply_force'),
+            NewtonIntegrator(damping=0.1, label='newton', gravity=(0, 0, 0)),
+    		PyRunner(command='add_data()',iterPeriod=1, label='data'),
+            PyRunner(command='check()',iterPeriod=1, label='checker')
+    ]
+
+    if print_vtk:
+        O.engines = O.engines + [VTKRecorder(recorders=["lsBodies"], fileName='./vtk/yade/', iterPeriod=1000, multiblockLS=True, label='export')]
+
+# -----------------------------------------------------------------------------#
+# Functions called multiple times
+# -----------------------------------------------------------------------------#
+
+def applied_force():
+    '''
+    Apply a constant force on the control wall.
+    '''
+    v_plate_max = 1000*(1-0.6)/(O.dt*20000) # modify here
+    kp = v_plate_max/(force_applied_target*0.1)
+    Fy = O.forces.f(wall_control.id)[1]
+    if Fy == 0:
+        wall_control.state.vel = (0, -v_plate_max, 0)  
+    else :
+        dF = Fy - force_applied_target
+        v_try_abs = kp*abs(dF) 
+        # maximal speed is applied to top wall
+        if v_try_abs < v_plate_max :
+            wall_control.state.vel = (0, np.sign(dF)*v_try_abs, 0)
+        else :
+            wall_control.state.vel = (0, np.sign(dF)*v_plate_max, 0)
+
+# -----------------------------------------------------------------------------#
+
+def check():
+    '''
+    Try to detect a steady-state.
+    A maximum number of iteration is used.
+    '''
+    if O.iter < max(n_ite_max*0.01, n_steady_state_detection):
+        return
+    window = plot.data['unbalForce'][-n_steady_state_detection:]
+    if O.iter > n_ite_max or max(window)<steady_state_detection:
+        if print_all_dem:
+            plot.plot(noShow=True).savefig('plot/dem/'+str(i_DEMPF_ite)+'.png')
+            #plot.saveDataTxt('plot/dem/'+str(i_DEMPF_ite)+'.txt', vars=('iteration', 'unbalForce', 'pos_w_control', 'f_w_control'))
+        if print_dem:
+            plot.plot(noShow=True).savefig('plot/dem.png')
+            #plot.saveDataTxt('plot/dem.txt', vars=('iteration', 'unbalForce', 'pos_w_control', 'f_w_control'))
+        O.pause() # stop DEM simulation
+    
+# -----------------------------------------------------------------------------#
+
+def add_data():
+    '''
+    Add data to plot :
+        - iteration
+        - unbalanced force (mean resultant forces / mean contact force)
+        - position of the control plate
+        - force applied on the control plate
+    '''
+    plot.addData(iteration=O.iter, unbalForce=round(unbalancedForce(),3),\
+                f_w_control=O.forces.f(wall_control.id)[1], pos_w_control=(wall_control.state.refPos[1]-wall_control.state.pos[1])/dim_ref)
+    
+# -----------------------------------------------------------------------------#
 # Load data
+# -----------------------------------------------------------------------------#
+
+# other
+density = 2000
 
 # from main
 with open('data/main_to_dem.data', 'rb') as handle:
     dict_save = pickle.load(handle)
-E = dict_save['E']
 Poisson = dict_save['Poisson']
-force_applied = dict_save['force_applied']
-k_control_force = dict_save['k_control_force']
-d_y_limit = dict_save['d_y_limit']
-x_min_wall = dict_save['x_min_wall']
-x_max_wall = dict_save['x_max_wall']
-y_min_wall = dict_save['y_min_wall']
-y_max_wall = dict_save['y_max_wall']
+E = dict_save['E']
+kn = dict_save['kn']
+ks = dict_save['ks']
+force_applied_target = dict_save['force_applied']
 n_ite_max = dict_save['n_ite_max']
-steady_state_detection = dict_save['steady_state_detection']
+i_DEMPF_ite = dict_save['i_DEMPF_ite']
+L_pos_w = dict_save['L_pos_w']
 n_steady_state_detection = dict_save['n_steady_state_detection']
+steady_state_detection = dict_save['steady_state_detection']
 print_all_dem = dict_save['print_all_dem']
 print_dem = dict_save['print_dem']
-i_DEMPF_ite = dict_save['i_DEMPF_ite']
+print_vtk = dict_save['print_vtk']
+extrude_z = dict_save['extrude_z']
+m_size = dict_save['m_size']
 
-# from plane interpolation
-with open('data/vertices.data', 'rb') as handle:
+# from phase field interpolation
+with open('data/level_set.data', 'rb') as handle:
     dict_save = pickle.load(handle)
-L_L_vertices = dict_save['L_L_vertices']
+L_sdf_i_map = dict_save['L_sdf_i_map']
+L_rbm_to_apply = dict_save['L_rbm_to_apply']
+L_x_L_i = dict_save['L_x_L_i']
+L_y_L_i = dict_save['L_y_L_i']
 
-# ------------------------------------------------------------------------------------------------------------------------------------------ #
+# -----------------------------------------------------------------------------#
 # Plan simulation
+# -----------------------------------------------------------------------------#
 
-# vtk exporter
-vtkExporter = export.VTKExporter('vtk/grains')
-
-# Plot
-create_plots() # from dem.py
 # materials
-create_materials() # from dem.py
-# create grains
-create_polyhedral() # from dem.py
-# create walls
-create_walls()
+create_materials()
+# create grains and walls
+create_grains()
+create_walls() 
+# define loading
+wall_control = O.bodies[-1]
+dim_ref = O.bodies[-1].state.refPos[1]-O.bodies[-2].state.refPos[1] 
 # Engines
-create_engines() # from dem.py
+create_engines()
 # time step
-compute_dt() # from dem.py
+compute_dt()
+# plot
+create_plots()
 
-# ------------------------------------------------------------------------------------------------------------------------------------------ #
-# DEM
+# -----------------------------------------------------------------------------#
+# MAIN DEM
+# -----------------------------------------------------------------------------#
 
 O.run()
 O.wait()
 
-# ------------------------------------------------------------------------------------------------------------------------------------------ #
+# -----------------------------------------------------------------------------#
 # Output
+# -----------------------------------------------------------------------------#
 
-# positions
-L_pos = []
-# box
-L_box = []
-# numbers of vertices
-L_n_v = []
-# displacements (translations + rotations)
-L_disp_trans = []
-L_disp_rot = []
-# iterate on grains
-for i_g in range(len(L_L_vertices)):
-    # position
-    L_pos.append(np.array([float(O.bodies[i_g].state.pos[0]), float(O.bodies[i_g].state.pos[1])]))
-    # box
-    box_dim = None
-    for v in bodies[i_g].shape.v:
-        dim_tempo = (v-Vector3(0,0,v[2])).norm()
-        if box_dim == None:
-            box_dim = dim_tempo
-        else :
-            if box_dim < dim_tempo:
-                box_dim = dim_tempo
-    L_box.append(box_dim)
-    # number of vertices
-    L_n_v.append(len(O.bodies[i_g].shape.v))
-    # displacement
-    L_disp_trans.append(np.array(O.bodies[i_g].state.pos - O.bodies[i_g].state.refPos)) 
-    L_disp_rot.append(np.array(O.bodies[i_g].state.rot()))
-# forces
-L_normal_force = []
-L_shear_force = []
-# contact ids
-L_contact_ids = []
-# Boolean for wall contact
-L_contact_wall = [] 
-# contact points
-L_contact_point = []
-# iterate on interactions
-for inter in O.interactions.all():
-    if inter.isReal: # check the contact exists
-        # forces
-        L_normal_force.append(np.array(inter.phys.normalForce))
-        L_shear_force.append(np.array(inter.phys.shearForce))
-        # contact ids
-        L_contact_ids.append([int(inter.id1), int(inter.id2)])
-        # Boolean for wall contact
-        L_contact_wall.append(isinstance(O.bodies[inter.id1].shape, Wall) or isinstance(O.bodies[inter.id2].shape, Wall))
-        # contact points
-        L_contact_point.append(np.array(inter.geom.contactPoint))
+L_displacement = []
+for i_grain in range(len(L_sdf_i_map)):
+    trans = np.array(O.bodies[i_grain].state.pos - O.bodies[i_grain].state.refPos)
+    rot_a = O.bodies[i_grain].state.ori.toAngleAxis()[0]
+    rot_v = O.bodies[i_grain].state.ori.toAngleAxis()[1]
+    L_displacement.append([trans[0], trans[1],\
+                           rot_a, rot_v[0], rot_v[1], rot_v[2]])
+L_contact = []
+for i in O.interactions:
+    # work only on grain-grain contact
+    if isinstance(O.bodies[i.id1].shape, LevelSet) and isinstance(O.bodies[i.id2].shape, LevelSet):
+        if i.id1 < i.id2:
+            id_smaller = i.id1
+            id_larger  = i.id2
+        else:
+            id_smaller = i.id2
+            id_larger  = i.id1
+        L_contact.append([id_smaller, id_larger, i.geom.penetrationDepth, np.array([i.phys.normalForce[0], i.phys.normalForce[1], i.phys.normalForce[2]])])
 
 # Save data
 dict_save = {
-'L_pos': L_pos,
-'L_box': L_box,
-'L_n_v': L_n_v,
-'L_disp_trans': L_disp_trans,
-'L_disp_rot': L_disp_rot,
-'L_normal_force': L_normal_force,
-'L_shear_force': L_shear_force,
-'L_contact_ids': L_contact_ids,
-'L_contact_wall': L_contact_wall,
-'L_contact_point': L_contact_point
+'L_displacement': L_displacement,
+'L_contact': L_contact
 }
 with open('data/dem_to_main.data', 'wb') as handle:
     pickle.dump(dict_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
