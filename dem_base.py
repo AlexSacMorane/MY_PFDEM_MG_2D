@@ -247,7 +247,8 @@ for i in O.interactions:
 # Save data
 dict_save = {
 'L_displacement': L_displacement,
-'L_contact': L_contact
+'L_contact': L_contact,
+'delta_y_sample': O.bodies[-1].state.pos[1]-O.bodies[-2].state.pos[1] 
 }
 with open('data/dem_to_main.data', 'wb') as handle:
     pickle.dump(dict_save, handle, protocol=pickle.HIGHEST_PROTOCOL)

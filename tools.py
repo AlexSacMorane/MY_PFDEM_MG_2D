@@ -402,20 +402,12 @@ def plot_displacement(dict_user, dict_sample):
     Plot figure illustrating the cumulative displacement.
     '''
     # pp data
-    L_L_strain = []
-    for i_grain in range(len(dict_user['L_L_displacement'][0])):
-        L_strain = []
-        for i_displacement in range(len(dict_user['L_L_displacement'])):
-            if i_displacement == 0:
-                L_displacement_cum = [dict_user['L_L_displacement'][i_displacement][i_grain][2]]
-            else : 
-                L_displacement_cum.append(L_displacement_cum[-1]+dict_user['L_L_displacement'][i_displacement][i_grain][2])
-            L_strain.append(L_displacement_cum[-1])
-        L_L_strain.append(L_strain)
+    L_strain = []
+    for i in range(len(dict_user['L_delta_y_sample'])):
+        L_strain.append((dict_user['L_delta_y_sample'][i]-dict_user['L_delta_y_sample'][0])/dict_user['L_delta_y_sample'][0])
     # plot
     fig, (ax1) = plt.subplots(nrows=1,ncols=1,figsize=(16,9))
-    for i_grain in range(len(L_L_strain)):
-        ax1.plot(L_L_strain[i_grain])
+    ax1.plot(L_strain)
     ax1.set_xlabel('iterations (-)')
     ax1.set_ylabel('vertical strain (-)')
     fig.tight_layout()
@@ -428,38 +420,39 @@ def plot_config_ic(dict_user, dict_sample):
     '''
     Plot the initial configuration maps.
     '''
-    if 'maps_ic' in dict_user['L_figures']:
+    if 'configuration_ic' in dict_user['L_figures']:
         # solute
-        fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        im = ax1.imshow(dict_sample['c_map'], interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]))
-        fig.colorbar(im, ax=ax1)
-        ax1.set_title(r'Map of solute',fontsize = 30)
-        fig.tight_layout()
-        fig.savefig('plot/ic/ic_map_solute.png')
-        plt.close(fig)
- 
-        s_eta_i = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
-        # eta_i
-        for i_eta in range(len(dict_sample['L_etai_map'])):
+        if 'configuration_c' in dict_user['L_figures']:
             fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-            im = ax1.imshow(dict_sample['L_etai_map'][i_eta], interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]))
+            im = ax1.imshow(dict_sample['c_map'], interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]))
             fig.colorbar(im, ax=ax1)
-            ax1.set_title(r'$\eta$'+str(i_eta),fontsize = 30)
+            ax1.set_title(r'Map of solute',fontsize = 30)
             fig.tight_layout()
-            fig.savefig('plot/ic/ic_map_eta'+str(i_eta)+'.png')
+            fig.savefig('plot/configuration/c_0.png')
             plt.close(fig)
-
-            # sum
-            s_eta_i = s_eta_i + dict_sample['L_etai_map'][i_eta]
-        
-        # sum of etas
-        fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
-        im = ax1.imshow(s_eta_i, interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]), vmax=1)
-        fig.colorbar(im, ax=ax1)
-        ax1.set_title(r'$\Sigma\eta$',fontsize = 30)
-        fig.tight_layout()
-        fig.savefig('plot/ic/ic_s_etas.png')
-        plt.close(fig)
+ 
+        # eta_i
+        if 'configuration_eta' in dict_user['L_figures'] :   
+            s_eta_i = np.zeros((dict_user['n_mesh_y'], dict_user['n_mesh_x']))
+            for i_eta in range(len(dict_sample['L_etai_map'])):
+                fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
+                im = ax1.imshow(dict_sample['L_etai_map'][i_eta], interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]))
+                fig.colorbar(im, ax=ax1)
+                ax1.set_title(r'$\eta$'+str(i_eta),fontsize = 30)
+                fig.tight_layout()
+                #fig.savefig('plot/configuration/eta_'+str(i_eta)+'_0.png')
+                plt.close(fig)
+                # sum
+                s_eta_i = s_eta_i + dict_sample['L_etai_map'][i_eta]
+            
+            # sum of etas
+            fig, (ax1) = plt.subplots(1,1,figsize=(16,9))
+            im = ax1.imshow(s_eta_i, interpolation = 'nearest', extent=(dict_sample['x_L'][0],dict_sample['x_L'][-1],dict_sample['y_L'][0],dict_sample['y_L'][-1]), vmax=1)
+            fig.colorbar(im, ax=ax1)
+            ax1.set_title(r'$\Sigma\eta$',fontsize = 30)
+            fig.tight_layout()
+            fig.savefig('plot/configuration/sum_eta_0.png')
+            plt.close(fig)
 
 #------------------------------------------------------------------------------------------------------------------------------------------ #
 
@@ -486,9 +479,8 @@ def plot_config(dict_user, dict_sample):
             fig.colorbar(im, ax=ax1)
             ax1.set_title(r'$\eta$'+str(i_eta),fontsize = 30)
             fig.tight_layout()
-            fig.savefig('plot/configuration/eta_'+str(i_eta)+'_'+str(dict_sample['i_DEMPF_ite'])+'.png')
+            #fig.savefig('plot/configuration/eta_'+str(i_eta)+'_'+str(dict_sample['i_DEMPF_ite'])+'.png')
             plt.close(fig)
-
             # sum
             s_eta_i = s_eta_i + dict_sample['L_etai_map'][i_eta]
         

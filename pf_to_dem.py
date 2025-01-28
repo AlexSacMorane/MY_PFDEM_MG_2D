@@ -1,6 +1,6 @@
 # -*- encoding=utf-8 -*-
 
-import pickle, math, os, shutil
+import pickle, math, os, shutil, random
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -273,10 +273,6 @@ def extract_etas_from_phis(dict_user, dict_sample):
     '''
     # iterate on eta
     for eta_i in range(len(dict_sample['L_etai_map'])):
-        
-        fig, (ax1, ax2) = plt.subplots(1,2,figsize=(16,9))
-
-
         # look for phi and position
         phi = 0
         while eta_i not in dict_sample['L_phi_L_etas'][phi]:
@@ -301,7 +297,7 @@ def extract_etas_from_phis(dict_user, dict_sample):
                     map_extract[i, j] = 0
         labelled_image, num_features = label(map_extract)
         # at least two features
-        if num_features != 1:
+        if num_features > 1:
             # determine the largest domain
             L_surf = [0]*num_features
             for i in range(map_extract.shape[0]):

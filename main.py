@@ -91,11 +91,11 @@ def run_moose(dict_user, dict_sample):
     # compute eta maps from the phi maps
     extract_etas_from_phis(dict_user, dict_sample) # in pf_to_dem.py
     
-    # check integrity of etas 
-    check_etas(dict_user, dict_sample) # in pf_to_dem.py
-
     # check mass
     compute_mass_loss(dict_user, dict_sample, 'L_loss_pf') # from tools.py
+    
+    # check integrity of etas 
+    check_etas(dict_user, dict_sample) # in pf_to_dem.py
 
 # ------------------------------------------------------------------------------------------------------------------------------------------ #
 
@@ -197,10 +197,9 @@ dict_sample = {}
 create_folder('vtk') # from tools.py
 create_folder('plot') # from tools.py
 if 'configuration_eta' in dict_user['L_figures'] or\
-   'configuration_c' in dict_user['L_figures']:
+   'configuration_c' in dict_user['L_figures'] or\
+   'configuration_ic' in dict_user['L_figures']:
     create_folder('plot/configuration') # from tools.py
-if 'maps_ic' in dict_user['L_figures']:
-    create_folder('plot/ic') # from tools.py
 if 'all_dem' in dict_user['L_figures']:
     create_folder('plot/dem') # from tools.py
 create_folder('data') # from tools.py

@@ -24,7 +24,7 @@ def move_phasefield(dict_user, dict_sample):
     L_displacement = dict_save['L_displacement']
 
     # tracker
-    dict_user['L_L_displacement'].append(dict_save['L_displacement'])
+    dict_user['L_delta_y_sample'].append(dict_save['delta_y_sample'])
     if 'displacement' in dict_user['L_figures']:
         plot_displacement(dict_user, dict_sample) # from tools.py
 
@@ -713,7 +713,7 @@ def sort_phase_variable(dict_user, dict_sample):
         fig.colorbar(im, ax=ax1)
         ax1.set_title(r'$\phi$'+str(i_phi),fontsize = 30)
         fig.tight_layout()
-        fig.savefig('plot/phi_'+str(i_phi)+'.png')
+        #fig.savefig('plot/phi_'+str(i_phi)+'.png')
         plt.close(fig)
 
         

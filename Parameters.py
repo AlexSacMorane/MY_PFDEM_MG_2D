@@ -32,7 +32,7 @@ def get_parameters():
     # dem, all_dem, overlap, normal_force, yade_vtk
     # contact_volume, contact_surface, as, pressure
     # displacement
-    # maps_ic, configuration_eta, configuration_c
+    # configuration_ic, configuration_eta, configuration_c
     L_figures = ['mean_etai_c','performance',\
                  'as',\
                  'displacement',
@@ -98,7 +98,8 @@ def get_parameters():
     # the time stepping and duration of one PF simualtion
     dt_PF = (0.01*24*60*60)/n_time # time step
     # n_t_PF*dt_PF gives the total time duration
-    n_t_PF = 200 # number of iterations
+    #n_t_PF = 200 # number of iterations
+    n_t_PF = 1 # number of iterations
     
     # the criteria on residual
     crit_res = 1e-3
@@ -109,7 +110,7 @@ def get_parameters():
     #---------------------------------------------------------------------#
     # trackers
 
-    L_L_displacement = []
+    L_delta_y_sample = []
     L_L_overlap = []
     L_L_normal_force = []
     L_L_contact_box_x = []
@@ -178,7 +179,7 @@ def get_parameters():
     'n_t_PF': n_t_PF,
     'crit_res': crit_res,
     'eta_contact_box_detection': eta_contact_box_detection,
-    'L_L_displacement': L_L_displacement,
+    'L_delta_y_sample': L_delta_y_sample,
     'L_L_overlap': L_L_overlap,
     'L_L_normal_force': L_L_normal_force,
     'L_L_contact_box_x': L_L_contact_box_x,
