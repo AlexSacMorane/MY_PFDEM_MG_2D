@@ -493,3 +493,155 @@ def plot_config(dict_user, dict_sample):
         fig.savefig('plot/configuration/sum_eta_'+str(dict_sample['i_DEMPF_ite'])+'.png')
         plt.close(fig)
 
+#------------------------------------------------------------------------------------------------------------------------------------------ #
+
+def save_initial_shape(dict_user, dict_sample):
+    '''
+    Shape initial shape of the grains.
+    '''
+    L_initial_eta = []
+    # iterate on the phase variable
+    for i_grain in range(len(dict_sample['L_etai_map'])):
+        # compute binary map
+        bin_i_map = np.array(-np.ones((dict_user['n_mesh_y'], dict_user['n_mesh_x'])))
+
+        # iteration on x
+        for i_x in range(len(dict_sample['x_L'])):
+            # iteration on y
+            for i_y in range(len(dict_sample['y_L'])):
+                # grain 
+                if dict_sample['L_etai_map'][i_grain][-1-i_y, i_x] > 0.5:
+                    bin_i_map[-1-i_y, i_x] = 1
+        
+        # look for dimensions of box    
+        # -x limit
+        i_x = 0
+        found = False
+        while (not found) and (i_x < bin_i_map.shape[0]):
+            if np.max(bin_i_map[:, i_x]) == -1:
+                i_x_min_lim = i_x
+            else :
+                found = True
+            i_x = i_x + 1
+        # +x limit
+        i_x = bin_i_map.shape[1]-1
+        found = False
+        while not found and 0 <= i_x:
+            if np.max(bin_i_map[:, i_x]) == -1:
+                i_x_max_lim = i_x
+            else :
+                found = True
+            i_x = i_x - 1
+        # -y limit
+        i_y = 0
+        found = False
+        while not found and 0 <= i_y:
+            if np.max(bin_i_map[-1-i_y, :]) == -1:
+                i_y_min_lim = i_y
+            else :
+                found = True
+            i_y = i_y + 1
+        # +y limit
+        i_y = bin_i_map.shape[0]-1
+        found = False
+        while (not found) and (i_y < bin_i_map.shape[1]):
+            if np.max(bin_i_map[-1-i_y, :]) == -1:
+                i_y_max_lim = i_y
+            else :
+                found = True
+            i_y = i_y - 1
+
+        # extraction of data
+        bin_i_map = bin_i_map[-1-i_y_max_lim:-1-i_y_min_lim+1,
+                              i_x_min_lim:i_x_max_lim+1]
+        # save data
+        L_initial_eta.append(bin_i_map)
+
+    # save tracker
+    dict_user['L_initial_eta'] = L_initial_eta
+
+#------------------------------------------------------------------------------------------------------------------------------------------ #
+
+def save_final_shape(dict_user, dict_sample):
+    '''
+    Shape final shape of the grains.
+
+    Compare it with initial one.
+    '''
+    L_final_eta = []
+    # iterate on the phase variable
+    for i_grain in range(len(dict_sample['L_etai_map'])):
+        # compute binary map
+        bin_i_map = np.array(-np.ones((dict_user['n_mesh_y'], dict_user['n_mesh_x'])))
+
+        # iteration on x
+        for i_x in range(len(dict_sample['x_L'])):
+            # iteration on y
+            for i_y in range(len(dict_sample['y_L'])):
+                # grain 
+                if dict_sample['L_etai_map'][i_grain][-1-i_y, i_x] > 0.5:
+                    bin_i_map[-1-i_y, i_x] = 1
+        
+        # look for dimensions of box    
+        # -x limit
+        i_x = 0
+        found = False
+        while (not found) and (i_x < bin_i_map.shape[0]):
+            if np.max(bin_i_map[:, i_x]) == -1:
+                i_x_min_lim = i_x
+            else :
+                found = True
+            i_x = i_x + 1
+        # +x limit
+        i_x = bin_i_map.shape[1]-1
+        found = False
+        while not found and 0 <= i_x:
+            if np.max(bin_i_map[:, i_x]) == -1:
+                i_x_max_lim = i_x
+            else :
+                found = True
+            i_x = i_x - 1
+        # -y limit
+        i_y = 0
+        found = False
+        while not found and 0 <= i_y:
+            if np.max(bin_i_map[-1-i_y, :]) == -1:
+                i_y_min_lim = i_y
+            else :
+                found = True
+            i_y = i_y + 1
+        # +y limit
+        i_y = bin_i_map.shape[0]-1
+        found = False
+        while (not found) and (i_y < bin_i_map.shape[1]):
+            if np.max(bin_i_map[-1-i_y, :]) == -1:
+                i_y_max_lim = i_y
+            else :
+                found = True
+            i_y = i_y - 1
+
+        # extraction of data
+        bin_i_map = bin_i_map[-1-i_y_max_lim:-1-i_y_min_lim+1,
+                              i_x_min_lim:i_x_max_lim+1]
+        # save data
+        L_final_eta.append(bin_i_map)
+        
+    # add data on dissolved grains
+    for i_eta in range(len(L_final_eta),len(dict_user['L_initial_eta'])):
+        L_final_eta.append(-np.ones((3,3)))
+
+    # save tracker
+    dict_user['L_final_eta'] = L_final_eta
+
+    # plot
+    if 'before_after' in dict_user['L_figures']:
+        for i_eta in range(len(dict_user['L_final_eta'])):
+            fig, (ax1, ax2) = plt.subplots(1,2,figsize=(16,9))
+            ax1.imshow(dict_user['L_initial_eta'][i_eta], interpolation = 'nearest', vmin=-1, vmax=1)
+            ax1.set_title('before',fontsize = 30)
+            ax2.imshow(dict_user['L_final_eta'][i_eta], interpolation = 'nearest', vmin=-1, vmax=1)
+            ax2.set_title('after',fontsize = 30)
+            fig.suptitle('grain '+str(i_eta))
+            fig.tight_layout()
+            fig.savefig('plot/before_after/'+str(i_eta)+'.png')
+            plt.close(fig)    

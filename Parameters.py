@@ -32,11 +32,11 @@ def get_parameters():
     # dem, all_dem, overlap, normal_force, yade_vtk
     # contact_volume, contact_surface, as, pressure
     # displacement
-    # configuration_ic, configuration_eta, configuration_c
-    L_figures = ['mean_etai_c','performance',\
+    # configuration_ic, configuration_eta, configuration_c, before_after
+    L_figures = ['mean_etai_c','performances',\
                  'as',\
                  'displacement',
-                 'configuration_eta']
+                 'configuration_eta', 'before_after']
 
     #---------------------------------------------------------------------#
     # DEM (Yade)

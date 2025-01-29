@@ -202,6 +202,8 @@ if 'configuration_eta' in dict_user['L_figures'] or\
     create_folder('plot/configuration') # from tools.py
 if 'all_dem' in dict_user['L_figures']:
     create_folder('plot/dem') # from tools.py
+if 'before_after' in dict_user['L_figures']:
+    create_folder('plot/before_after') # from tools.py
 create_folder('data') # from tools.py
 create_folder('input') # from tools.py
 create_folder('dict') # from tools.py
@@ -212,11 +214,15 @@ tic = time.perf_counter()
 # ------------------------------------------------------------------------------------------------------------------------------------------ #
 # Create initial condition
 
+# generate grains and solute
 load_microstructure(dict_user, dict_sample) # from ic.py
 create_solute(dict_user, dict_sample) # from ic.py
 
+# save initial shape
+save_initial_shape(dict_user, dict_sample) # from tools.py
+
 # plot
-plot_config_ic(dict_user, dict_sample)
+plot_config_ic(dict_user, dict_sample) # from tools.py
 
 # compute tracker
 plot_sum_mean_etai_c(dict_user, dict_sample) # from tools.py
@@ -275,6 +281,18 @@ while dict_sample['i_DEMPF_ite'] < dict_user['n_DEMPF_ite']:
 # ------------------------------------------------------------------------------------------------------------------------------------------ #
 # close simulation
 
+# save final shape
+save_final_shape(dict_user, dict_sample) # from tools.py
+
+# clean dict
+del dict_sample['L_phi_L_etas']
+del dict_sample['L_phi_L_boxs']
+del dict_sample['L_phii_map']
+del dict_sample['kc_map']
+del dict_sample['L_vol_contact']
+del dict_sample['L_surf_contact']
+del dict_sample['as_map']
+
 # save
 with open('dict/dict_user', 'wb') as handle:
     pickle.dump(dict_user, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -295,6 +313,10 @@ save_mesh_database(dict_user, dict_sample) # from tools.py
 # sort files
 #reduce_n_vtk_files(dict_user, dict_sample) # from tools.py
 # functions needed to be adapted
+
+# delete folder
+shutil.rmtree('data')
+shutil.rmtree('input')
 
 #output
 print('\n')

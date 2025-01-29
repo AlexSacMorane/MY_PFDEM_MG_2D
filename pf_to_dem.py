@@ -358,6 +358,10 @@ def check_etas(dict_user, dict_sample):
             dict_user['L_L_loss_pf_eta_i'].pop(eta_i)
             # delete map
             dict_sample['L_etai_map'].pop(eta_i)
+            # move initial shape in the tracker
+            m_eta_i = dict_user['L_initial_eta'].pop(eta_i)
+            dict_user['L_initial_eta'].append(m_eta_i)
+            
         # next phase
         if not deleted:
             eta_i = eta_i + 1
