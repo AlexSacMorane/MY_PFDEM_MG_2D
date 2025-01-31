@@ -307,6 +307,11 @@ def compute_as(dict_user, dict_sample):
                     # do not erase data
                     if dict_sample['as_map'][-1-i_y, i_x] == 1:
                         dict_sample['as_map'][-1-i_y, i_x] = math.exp(P*dict_user['V_m']/(dict_user['R_cst']*dict_user['temperature']))
+                
+                # no activity out of the box
+                if dict_sample['x_L'][i_x] < dict_sample['L_pos_w'][0] or dict_sample['L_pos_w'][1] < dict_sample['x_L'][i_x] or \
+                   dict_sample['y_L'][i_y] < dict_sample['L_pos_w'][2] or dict_sample['L_pos_w'][3] < dict_sample['y_L'][i_y] :
+                     dict_sample['as_map'][-1-i_y, i_x] = 1
 
     # save
     # iterate on potential contact
@@ -336,7 +341,8 @@ def compute_as(dict_user, dict_sample):
                     dict_user['L_L_contact_pressure'][ij].append(0)
                     dict_user['L_L_contact_as'][ij].append(1)
             ij = ij + 1
-            
+
+
     # plot 
     plot_as_pressure(dict_user, dict_sample) # from tools.py
 
@@ -361,21 +367,30 @@ def compute_kc(dict_user, dict_sample):
             # count the number of eta > eta_criterion
             c_eta_crit = 0
             for i_grain in range(len(dict_sample['L_etai_map'])):
-                if dict_sample['L_etai_map'][i_grain][i_y, i_x] > dict_user['eta_contact_box_detection']:
+                if dict_sample['L_etai_map'][i_grain][-1-i_y, i_x] > dict_user['eta_contact_box_detection']:
                     c_eta_crit = c_eta_crit + 1
             # compute coefficient of diffusion
             if c_eta_crit == 0: # out of the grain
-                kc_map[i_y, i_x] = True
-                kc_pore_map[i_y, i_x] = True
+                kc_map[-1-i_y, i_x] = True
+                kc_pore_map[-1-i_y, i_x] = True
             elif c_eta_crit >= 2: # in the contact
-                kc_map[i_y, i_x] = True
-                kc_pore_map[i_y, i_x] = False
+                kc_map[-1-i_y, i_x] = True
+                kc_pore_map[-1-i_y, i_x] = False
             else : # in the grain
-                kc_map[i_y, i_x] = False
-                kc_pore_map[i_y, i_x] = False
+                kc_map[-1-i_y, i_x] = False
+                kc_pore_map[-1-i_y, i_x] = False
 
     # dilation
     dilated_M = binary_dilation(kc_map, dict_user['struct_element'])
+
+    # iterate on x and y 
+    for i_y in range(len(dict_sample['y_L'])):
+        for i_x in range(len(dict_sample['x_L'])):
+            # no diffusion out of the box
+            if dict_sample['x_L'][i_x] < dict_sample['L_pos_w'][0] or dict_sample['L_pos_w'][1] < dict_sample['x_L'][i_x] or \
+               dict_sample['y_L'][i_y] < dict_sample['L_pos_w'][2] or dict_sample['L_pos_w'][3] < dict_sample['y_L'][i_y] :
+                dilated_M[-1-i_y, i_x] = False
+                kc_pore_map[-1-i_y, i_x] = False
 
     #compute the map of the solute diffusion coefficient
     kc_map = dict_user['D_solute']*dilated_M + 99*dict_user['D_solute']*kc_pore_map
@@ -406,8 +421,8 @@ def compute_kc(dict_user, dict_sample):
     # iterate on the mesh
     for i_y in range(len(dict_sample['y_L'])):
         for i_x in range(len(dict_sample['x_L'])):
-            if not dilated_M[i_y, i_x]: 
-                c_map_new[i_y, i_x] = dict_user['C_eq']
+            if not dilated_M[-1-i_y, i_x]: 
+                c_map_new[-1-i_y, i_x] = dict_user['C_eq']
     
     # HERE MUST BE MODIFIED
     # Move the solute to connserve the mass

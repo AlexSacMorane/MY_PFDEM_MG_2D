@@ -66,10 +66,10 @@ def load_microstructure(dict_user, dict_sample):
     print("Creating initial mesh")
 
     # limits
-    x_L_min = dict_sample['L_pos_w'][0] -dict_user['w_int']
-    x_L_max = dict_sample['L_pos_w'][1] +dict_user['w_int']
-    y_L_min = dict_sample['L_pos_w'][2] -dict_user['w_int']
-    y_L_max = dict_sample['L_pos_w'][3] +dict_user['w_int']
+    x_L_min = dict_sample['L_pos_w'][0] -2*dict_user['w_int']
+    x_L_max = dict_sample['L_pos_w'][1] +2*dict_user['w_int']
+    y_L_min = dict_sample['L_pos_w'][2] -2*dict_user['w_int']
+    y_L_max = dict_sample['L_pos_w'][3] +2*dict_user['w_int']
     
     # mesh
     x_L = np.arange(x_L_min, x_L_max+dict_user['m_size']*0.1, dict_user['m_size'])
