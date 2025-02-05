@@ -7,7 +7,7 @@ The goal is to simulate the pressure solution phenomena (illustrated by the foll
 
 ![scheme of grain-grain interaction](image/PressureSolutionScheme_WB.png)
 
-The microstructure is extracted from the [Sand-Atlas database](https://sand-atlas.scigem.com) and the [python code](https://github.com/AlexSacMorane/SandAlas_extraction_2D) available on Github. 
+The microstructure is extracted from the [Sand-Atlas database](https://sand-atlas.scigem.com) and the [python code](https://github.com/AlexSacMorane/SandAtlas_extraction_2D) available on Github. 
 
 ## Technical description
 The PFDEM is a discussion between phase-field (PF) simulation and discrete element modelization (DEM). Even if those formulations are different, they can collaborate with data exchange.
